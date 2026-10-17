@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import io.github.cosmicoverlord.boardingpass.AppGraph
 import io.github.cosmicoverlord.boardingpass.core.model.BoardingPass
 import io.github.cosmicoverlord.boardingpass.core.model.DecodedCode
+import io.github.cosmicoverlord.boardingpass.core.model.Tracking
 import io.github.cosmicoverlord.boardingpass.core.status.StatusException
 import io.github.cosmicoverlord.boardingpass.data.AppSettings
 import io.github.cosmicoverlord.boardingpass.importer.ImportOutcome
@@ -18,6 +19,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.time.LocalDate
 import io.github.cosmicoverlord.boardingpass.core.tr
 
 sealed interface UiEvent {
@@ -91,7 +93,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             )
             if (settings.value.trackingEnabled) {
                 // One request per flight: refresh() already updates every pass on the same flight.
-                ids.mapNotNull { repo.get(it) }.distinctBy { it.flightKey }.forEach { refresh(it.id, quiet = true) }
+                // Never for passes of flights that are already over (old passes imported for the record).
+                val today = LocalDate.now()
+                ids.mapNotNull { repo.get(it) }
+                    .filter { Tracking.isRefreshable(it, today) }
+                    .distinctBy { it.flightKey }
+                    .forEach { refresh(it.id, quiet = true) }
             }
             return
         }
