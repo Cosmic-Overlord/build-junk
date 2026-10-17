@@ -60,7 +60,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.vector.PathParser
+import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -331,18 +331,16 @@ private fun SeatInfo(map: SeatMap, seat: SmSeat?, mine: Boolean, mySeat: String?
 
 /**
  * Cabin extents and outline in the site's units (x from the centre line). The outline is the
- * site's own floor shape when the page has one, else a generic tapered nose and tail.
+ * site's own floor shape when the page has a sane one, else a generic tapered nose and tail.
  */
 private class CabinGeometry(
     val outline: Path,
-    /** Maps outline coordinates to site units: site = offset + point * outlineScale. */
-    val outlineOffsetX: Float,
-    val outlineScale: Float,
     val half: Float,
     val top: Float,
     val bottom: Float,
     val rows: Map<Int, List<SmSeat>>,
     val aisleX: Float?,
+    val icons: List<SeatMapLogic.Icon>,
 ) {
     companion object {
         fun of(map: SeatMap): CabinGeometry {
@@ -353,22 +351,25 @@ private class CabinGeometry(
             var top = items.minOf { it.top }
             var bottom = items.maxOf { it.bottom }
 
-            val site = map.outline?.let { o ->
-                runCatching { PathParser().parsePathString(o.path).toPath() }.getOrNull()?.let { it to o }
-            }
+            val site = map.outline
             val outline: Path
-            val offsetX: Float
-            val k: Float
             if (site != null) {
-                val (path, o) = site
-                val b = path.getBounds()
-                outline = path
-                offsetX = o.left
-                k = o.scale
-                left = min(left, o.left + b.left * k)
-                right = max(right, o.left + b.right * k)
-                top = min(top, b.top * k)
-                bottom = max(bottom, b.bottom * k)
+                outline = Path().apply {
+                    fillType = PathFillType.EvenOdd
+                    site.rings.forEach { r ->
+                        moveTo(r[0], r[1])
+                        for (i in 2 until r.size - 1 step 2) lineTo(r[i], r[i + 1])
+                        close()
+                    }
+                }
+                site.rings.forEach { r ->
+                    for (i in 0 until r.size - 1 step 2) {
+                        left = min(left, r[i])
+                        right = max(right, r[i])
+                        top = min(top, r[i + 1])
+                        bottom = max(bottom, r[i + 1])
+                    }
+                }
             } else {
                 val w = max(abs(left), abs(right)) + 40f
                 val t = top - 60f
@@ -385,8 +386,6 @@ private class CabinGeometry(
                     cubicTo(-w * 0.4f, bt + tail * 0.9f, -w, bt + tail * 0.5f, -w, bt)
                     close()
                 }
-                offsetX = 0f
-                k = 1f
                 left = -w
                 right = w
                 top = t - nose
@@ -398,13 +397,12 @@ private class CabinGeometry(
             val aisles = rows.values.mapNotNull { r -> widestGap(r)?.takeIf { it.second > seatW * 0.5f }?.first }.sorted()
             return CabinGeometry(
                 outline = outline,
-                outlineOffsetX = offsetX,
-                outlineScale = k,
                 half = max(abs(left), abs(right)) + 16f,
                 top = top - 24f,
                 bottom = bottom + 24f,
                 rows = rows,
                 aisleX = aisles.getOrNull(aisles.size / 2),
+                icons = SeatMapLogic.icons(map),
             )
         }
 
@@ -453,14 +451,13 @@ private fun SeatCanvas(map: SeatMap, mySeat: String?, selected: String?, onSelec
                 fun ox(x: Float) = (x + geo.half) * scale
                 fun oy(y: Float) = (y - geo.top) * scale
 
-                // Cabin floor in its own coordinates: screen = translate + (scale * outlineScale) * point.
-                val k = scale * geo.outlineScale
+                // Cabin floor in site units, mapped the same way as everything else.
                 withTransform({
-                    translate(ox(geo.outlineOffsetX), oy(0f))
-                    scale(k, k, pivot = Offset.Zero)
+                    translate(ox(0f), oy(0f))
+                    scale(scale, scale, pivot = Offset.Zero)
                 }) {
                     drawPath(geo.outline, scheme.surfaceContainerHigh)
-                    drawPath(geo.outline, scheme.outlineVariant, style = Stroke(width = 2.dp.toPx() / k))
+                    drawPath(geo.outline, scheme.outlineVariant, style = Stroke(width = 2.dp.toPx() / scale))
                 }
 
                 map.blocks.forEach { b ->
@@ -471,14 +468,14 @@ private fun SeatCanvas(map: SeatMap, mySeat: String?, selected: String?, onSelec
                         cornerRadius = CornerRadius(12f * scale),
                     )
                 }
-                map.stickers.forEach { st ->
-                    val painter = when (st.kind) {
+                geo.icons.forEach { icon ->
+                    val painter = when (icon.kind) {
                         "l" -> wcIcon
                         "g" -> galleyIcon
                         else -> null
                     } ?: return@forEach
-                    val side = min(st.w, st.h) * scale * 1.1f
-                    translate(ox(st.x + st.w / 2) - side / 2, oy(st.y + st.h / 2) - side / 2) {
+                    val side = icon.size * scale
+                    translate(ox(icon.x) - side / 2, oy(icon.y) - side / 2) {
                         with(painter) { draw(Size(side, side), colorFilter = ColorFilter.tint(scheme.onSurfaceVariant)) }
                     }
                 }

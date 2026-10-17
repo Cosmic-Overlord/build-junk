@@ -46,13 +46,49 @@ data class SmSeat(
 @Serializable
 data class SmBox(val x: Float, val y: Float, val w: Float, val h: Float, val kind: String = "")
 
-/**
- * The cabin floor outline as the site draws it: SVG path data in a [viewBoxW]-wide box, placed
- * [width] units wide starting [left] units from the centre line (same units as the seats).
- */
+/** The cabin floor outline as the site draws it, as rings of x,y pairs in seat units. */
 @Serializable
-data class SmOutline(val path: String, val viewBoxW: Float, val viewBoxH: Float, val width: Float, val left: Float) {
-    val scale: Float get() = width / viewBoxW
+data class SmOutline(val rings: List<List<Float>>) {
+    fun contains(x: Float, y: Float) = SvgPath.contains(rings, x, y)
+
+    /**
+     * How far the nose and tail ends differ from their mirror image, as a share of the cabin
+     * width: about 0 for a real fuselage, large for a shape that came out skewed or shifted.
+     */
+    fun asymmetry(): Float {
+        val half = rings.maxOf { r -> r.filterIndexed { i, _ -> i % 2 == 0 }.maxOf { abs(it) } }
+        if (half <= 0f) return 1f
+        var sum = 0f
+        for (i in 1..16) {
+            val x = half * 0.8f * i / 16
+            val a = ends(x) ?: return 1f
+            val b = ends(-x) ?: return 1f
+            sum += maxOf(abs(a.first - b.first), abs(a.second - b.second))
+        }
+        return sum / 16 / (2 * half)
+    }
+
+    /** Lowest and highest y where the vertical line at [x] crosses the outline. */
+    private fun ends(x: Float): Pair<Float, Float>? {
+        var lo = Float.MAX_VALUE
+        var hi = -Float.MAX_VALUE
+        rings.forEach { r ->
+            val n = r.size / 2
+            for (k in 0 until n) {
+                val j = (k + n - 1) % n
+                val x1 = r[2 * j]
+                val y1 = r[2 * j + 1]
+                val x2 = r[2 * k]
+                val y2 = r[2 * k + 1]
+                if ((x1 > x) != (x2 > x)) {
+                    val y = y1 + (y2 - y1) * (x - x1) / (x2 - x1)
+                    lo = minOf(lo, y)
+                    hi = maxOf(hi, y)
+                }
+            }
+        }
+        return if (lo <= hi) lo to hi else null
+    }
 }
 
 @Serializable
@@ -183,7 +219,11 @@ object SeatMapsParser {
         val floor = Regex("comp-plane_floor\"[^>]*style=\"[^\"]*height:\\s*([\\d.]+)px").find(html)?.groupValues?.get(1)?.toFloatOrNull()
         val specs = attr(Regex("<[^>]*data-seat-class-features=\"[^\"]*\"[^>]*>").find(html)?.value ?: "", "data-seat-class-features")
             ?.let(::classSpecs).orEmpty()
-        return SeatMap(id, seats, blocks, stickers, floor, specs, outline(html))
+        // Use the site's outline only when it is a sane fuselage with the seats inside it.
+        val outline = outline(html)?.takeIf { o ->
+            seats.count { o.contains(it.x + it.w / 2, it.y + it.h / 2) } >= seats.size * 0.9 && o.asymmetry() < 0.04f
+        }
+        return SeatMap(id, seats, blocks, stickers, floor, specs, outline)
     }
 
     /** `<div id="plane-vector-carpet" style="width: 1088px; margin: 0 0 0 -544px"><svg viewBox=…><path|polygon class="plane-vector_carpet">`. */
@@ -198,22 +238,39 @@ object SeatMapsParser {
         val left = margins?.getOrNull(3) ?: margins?.getOrNull(1) ?: -width / 2
         val svgEnd = html.indexOf("</svg>", tagEnd).takeIf { it > 0 } ?: return null
         val svg = html.substring(tagEnd, svgEnd)
-        val box = Regex("viewBox=\"\\s*[-\\d.]+[\\s,]+[-\\d.]+[\\s,]+([\\d.]+)[\\s,]+([\\d.]+)\\s*\"").find(svg) ?: return null
-        val vbW = box.groupValues[1].toFloatOrNull()?.takeIf { it > 0 } ?: return null
-        val vbH = box.groupValues[2].toFloatOrNull() ?: return null
-        val shape = Regex("<(path|polygon)\\b[^>]*>").findAll(svg).firstOrNull { m ->
+        val box = Regex("viewBox=\"\\s*([-\\d.]+)[\\s,]+([-\\d.]+)[\\s,]+([\\d.]+)[\\s,]+([\\d.]+)\\s*\"").find(svg) ?: return null
+        val vbX = box.groupValues[1].toDoubleOrNull() ?: 0.0
+        val vbY = box.groupValues[2].toDoubleOrNull() ?: 0.0
+        val vbW = box.groupValues[3].toFloatOrNull()?.takeIf { it > 0 } ?: return null
+        val vbH = box.groupValues[4].toFloatOrNull()?.takeIf { it > 0 } ?: return null
+        val shape = Regex("<(path|polygon|polyline)\\b[^>]*>").findAll(svg).firstOrNull { m ->
             val cls = attr(m.value, "class").orEmpty()
             "plane-vector_carpet" in cls || attr(m.value, "id") == "floor"
         } ?: return null
-        val path = if (shape.groupValues[1] == "path") {
-            attr(shape.value, "d") ?: return null
+        val raw = if (shape.groupValues[1] == "path") {
+            SvgPath.flatten(attr(shape.value, "d") ?: return null)
         } else {
-            val nums = Regex("-?\\d+(?:\\.\\d+)?").findAll(attr(shape.value, "points") ?: return null).map { it.value }.toList()
-            if (nums.size < 6) return null
-            nums.chunked(2).filter { it.size == 2 }.mapIndexed { i, (x, y) -> (if (i == 0) "M" else "L") + "$x $y" }
-                .joinToString(" ") + " Z"
+            val nums = Regex("[-+]?(?:\\d+\\.?\\d*|\\.\\d+)").findAll(attr(shape.value, "points") ?: return null)
+                .map { it.value.toDouble() }.toList()
+            listOf(nums.chunked(2).filter { it.size == 2 }.map { it[0] to it[1] })
         }
-        return SmOutline(path, vbW, vbH, width, left)
+        // Transforms of enclosing <g> elements (outermost first) and of the shape itself.
+        val stack = ArrayDeque<Affine>()
+        Regex("<(/?)g\\b([^>]*)>").findAll(svg.substring(0, shape.range.first)).forEach { g ->
+            when {
+                g.groupValues[1] == "/" -> stack.removeLastOrNull()
+                !g.groupValues[2].trimEnd().endsWith("/") -> stack.addLast(Affine.parse(attr("<g " + g.groupValues[2] + ">", "transform")))
+            }
+        }
+        val m = stack.fold(Affine()) { acc, t -> acc * t } * Affine.parse(attr(shape.value, "transform"))
+        val k = width / vbW
+        val rings = raw.filter { it.size >= 3 }.map { ring ->
+            ring.flatMap { (x, y) ->
+                val (tx, ty) = m.apply(x, y)
+                listOf((left + (tx - vbX) * k).toFloat(), ((ty - vbY) * k).toFloat())
+            }
+        }
+        return if (rings.isEmpty()) null else SmOutline(rings)
     }
 
     // ------------------------------------------------------------------ helpers
@@ -396,6 +453,38 @@ object SeatMapLogic {
             else -> f.name.replace(Regex("([a-z])([A-Z])"), "$1 $2").lowercase()
         } ?: return@mapNotNull null
         text to f.positive
+    }
+
+    /** An icon to draw: [kind] "l" lavatory, "g" galley; centre in seat units. */
+    data class Icon(val kind: String, val x: Float, val y: Float, val size: Float)
+
+    /**
+     * The site puts lavatory/galley icons on the floor in front of the monument walls; show them
+     * on the nearest monument block instead, several side by side when they share one.
+     */
+    fun icons(map: SeatMap): List<Icon> {
+        val assigned = map.stickers.map { st ->
+            val cx = st.x + st.w / 2
+            val best = map.blocks.map { b ->
+                val dx = maxOf(0f, b.x - (st.x + st.w), st.x - (b.x + b.w))
+                val dy = maxOf(0f, b.y - (st.y + st.h), st.y - (b.y + b.h))
+                Triple(b, dx, dy)
+            }.filter { (_, dx, dy) -> dx <= 150f && dy <= 700f }.minByOrNull { (_, dx, dy) -> dx * 2 + dy }?.first
+            Triple(st, best, cx)
+        }
+        val out = mutableListOf<Icon>()
+        assigned.groupBy { it.second }.forEach { (block, items) ->
+            if (block == null) {
+                items.forEach { (st, _, _) -> out += Icon(st.kind, st.x + st.w / 2, st.y + st.h / 2, minOf(st.w, st.h)) }
+            } else {
+                val sorted = items.sortedBy { it.third }
+                val size = minOf(block.h * 0.8f, block.w / (sorted.size + 0.5f))
+                sorted.forEachIndexed { i, (st, _, _) ->
+                    out += Icon(st.kind, block.x + block.w * (i + 1) / (sorted.size + 1), block.y + block.h / 2, size)
+                }
+            }
+        }
+        return out
     }
 
     /** `28-29"` -> `28–29″ (71–74 см)`. */

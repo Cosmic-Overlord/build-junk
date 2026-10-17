@@ -60,7 +60,11 @@ sealed interface SeatMapResult {
  * model; the layout variant from the pass's seat and cabin.
  */
 class SeatMapRepository(private val context: Context) {
-    private val dir = File(context.cacheDir, "seatmaps").apply { mkdirs() }
+    private val dir = File(context.cacheDir, "seatmaps").apply {
+        mkdirs()
+        // Maps parsed by older versions are re-read in the current format.
+        listFiles { f -> f.name.startsWith("map-") || f.name.startsWith("map2-") }?.forEach { it.delete() }
+    }
     private val pages = PageFetcher(context)
 
     suspend fun load(pass: BoardingPass, force: Boolean = false): SeatMapResult {
@@ -126,7 +130,7 @@ class SeatMapRepository(private val context: Context) {
         }
 
     private suspend fun seatMap(id: String, force: Boolean): SeatMap =
-        cached("map2-${safe(id)}.json", SeatMap.serializer(), DAY * 90, force) {
+        cached("map3-${safe(id)}.json", SeatMap.serializer(), DAY * 90, force) {
             SeatMapsParser.parseSeatMap(pages.fetch(SeatMapsUrls.seatMap(id), SeatMapsUrls.SEATMAP_MARKER), id)
         }
 

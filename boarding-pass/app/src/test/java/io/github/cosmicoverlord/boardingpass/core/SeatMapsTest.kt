@@ -9,6 +9,9 @@ import io.github.cosmicoverlord.boardingpass.core.seatmap.AircraftMatcher
 import io.github.cosmicoverlord.boardingpass.core.seatmap.SeatMapLogic
 import io.github.cosmicoverlord.boardingpass.core.seatmap.SeatMapsParser
 import io.github.cosmicoverlord.boardingpass.core.seatmap.SmAircraft
+import io.github.cosmicoverlord.boardingpass.core.seatmap.SmBox
+import io.github.cosmicoverlord.boardingpass.core.seatmap.SmOutline
+import io.github.cosmicoverlord.boardingpass.core.seatmap.SvgPath
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -114,26 +117,77 @@ class SeatMapsTest {
         assertEquals("левый борт", SeatMapLogic.sideLabel(s))
     }
 
+    private fun carpet(width: Int, left: Int, viewBox: String, shape: String) =
+        "<div id=\"plane-vector-carpet\" class=\"comp-plane_carpet plane-wrap\" style=\"width: ${width}px; margin: 0px 0px 0px ${left}px; transform: scale(0.365);\">" +
+            "<svg viewBox=\"$viewBox\">$shape</svg></div>"
+
+    private fun bounds(o: SmOutline): List<Float> {
+        val xs = o.rings.flatMap { r -> r.filterIndexed { i, _ -> i % 2 == 0 } }
+        val ys = o.rings.flatMap { r -> r.filterIndexed { i, _ -> i % 2 == 1 } }
+        return listOf(xs.min(), xs.max(), ys.min(), ys.max())
+    }
+
     @Test
     fun parsesCabinOutline() {
-        val withPath = mapV1 + """
-            <div id="plane-vector-carpet" class="comp-plane_carpet plane-wrap" style="width: 1088px; margin: 0px 0px 0px -544px; transform: scale(0.365);">
-            <svg viewBox="0 0 837.4 7726.5"><path id="floor" class="plane-vector_carpet" d="M745,995.9l7-2.1L86,995.9Z"></path></svg></div>
-        """.trimIndent()
-        val o = SeatMapsParser.parseSeatMap(withPath, "v1").outline!!
-        assertEquals("M745,995.9l7-2.1L86,995.9Z", o.path)
-        assertEquals(837.4f, o.viewBoxW)
-        assertEquals(-544f, o.left)
-        assertEquals(1088f / 837.4f, o.scale, 0.0001f)
+        // 1088 units wide from -544: viewBox x 94..994 is -450..450 around the centre line.
+        val path = SeatMapsParser.parseSeatMap(
+            mapV1 + carpet(1088, -544, "0 0 1088 4000", "<path id=\"floor\" class=\"plane-vector_carpet\" d=\"M94 1000 H994 V3000 H94 Z\"></path>"), "v1",
+        ).outline!!
+        assertEquals(listOf(-450f, 450f, 1000f, 3000f), bounds(path))
+        assertEquals(listOf(listOf(-450f, 1000f, 450f, 1000f, 450f, 3000f, -450f, 3000f)), path.rings)
+        assertTrue(path.contains(0f, 2000f))
+        assertFalse(path.contains(500f, 2000f))
 
-        val withPolygon = mapV2 + """
-            <div id="plane-vector-carpet" style="width: 1100px; margin: 0px 0px 0px -548px;"><svg viewBox="0 0 842.1 5799.7">
-            <polygon class="plane-vector_carpet" points="666.3 632.1 691.2 774.2 170.9 632.1"></polygon></svg></div>
-        """.trimIndent()
-        val p = SeatMapsParser.parseSeatMap(withPolygon, "v2").outline!!
-        assertEquals("M666.3 632.1 L691.2 774.2 L170.9 632.1 Z", p.path)
-        assertEquals(-548f, p.left)
+        // Group transforms apply; a closed sibling group's transform does not; viewBox origin shifts.
+        val grouped = SeatMapsParser.parseSeatMap(
+            mapV1 + carpet(
+                1088, -544, "100 0 1088 4000",
+                "<g transform=\"rotate(90)\"></g><g transform=\"translate(100 0)\"><g transform=\"scale(2)\">" +
+                    "<path class=\"plane-vector_carpet\" d=\"m47 500 h450 v1000 h-450 z\"/></g></g>",
+            ), "v1",
+        ).outline!!
+        assertEquals(listOf(-450f, 450f, 1000f, 3000f), bounds(grouped))
+
+        val polygon = SeatMapsParser.parseSeatMap(
+            mapV2 + carpet(1100, -548, "0 0 1100 3000", "<polygon class=\"plane-vector_carpet\" points=\"98 1000 998 1000 998 3000 98 3000\"></polygon>"), "v2",
+        ).outline!!
+        assertEquals(listOf(listOf(-450f, 1000f, 450f, 1000f, 450f, 3000f, -450f, 3000f)), polygon.rings)
+
+        // An outline that misses the seats, or is skewed, is dropped rather than drawn wrong.
+        val off = mapV1 + carpet(1088, -544, "0 0 1088 4000", "<path class=\"plane-vector_carpet\" d=\"M0 0 H100 V100 H0 Z\"/>")
+        assertNull(SeatMapsParser.parseSeatMap(off, "v1").outline)
+        val skewed = mapV1 + carpet(1088, -544, "0 0 1088 4000", "<path class=\"plane-vector_carpet\" d=\"M94 1000 L994 1300 V3000 H94 Z\"/>")
+        assertEquals(0f, path.asymmetry(), 0.001f)
+        assertNull(SeatMapsParser.parseSeatMap(skewed, "v1").outline)
         assertNull(SeatMapsParser.parseSeatMap(mapV1, "v1").outline)
+    }
+
+    @Test
+    fun flattensCurves() {
+        val ring = SvgPath.flatten("M0 0 C0 10 10 10 10 0 Q5 -5 0 0 Z", steps = 4).single()
+        assertEquals(9, ring.size)
+        assertEquals(10.0 to 0.0, ring[4])
+        assertEquals(7.5, ring[2].second, 1e-9)
+        assertEquals(0.0 to 0.0, ring.last())
+    }
+
+    @Test
+    fun putsIconsOnTheirMonuments() {
+        val map = SeatMapsParser.parseSeatMap(mapV1, "v1")
+        val icon = SeatMapLogic.icons(map).single()
+        assertEquals("l", icon.kind)
+        assertEquals(-434.8f + 286.5f / 2, icon.x, 0.01f)
+        assertEquals(1250f + 66f, icon.y, 0.01f)
+
+        // Two icons on one block sit side by side; a far-away one stays where it is.
+        val two = map.copy(
+            stickers = listOf(SmBox(-300f, 1100f, 80f, 80f, "g"), SmBox(-420f, 1100f, 80f, 80f, "l"), SmBox(300f, 100f, 80f, 80f, "l")),
+        )
+        val icons = SeatMapLogic.icons(two).sortedBy { it.x }
+        assertEquals(listOf("l", "g", "l"), icons.map { it.kind })
+        assertEquals(-434.8f + 286.5f / 3, icons[0].x, 0.01f)
+        assertEquals(-434.8f + 286.5f * 2 / 3, icons[1].x, 0.01f)
+        assertEquals(340f to 140f, icons[2].x to icons[2].y)
     }
 
     @Test
