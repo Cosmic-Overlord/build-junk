@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -274,8 +273,9 @@ private fun ReadyContent(s: SeatMapResult.Ready, pass: BoardingPass?, onVariant:
 @Composable
 private fun SeatInfo(map: SeatMap, seat: SmSeat?, mine: Boolean, mySeat: String?, onOtherAircraft: () -> Unit) {
     val colors = LocalStatusColors.current
+    // Sits on the bottom edge: the Scaffold's padding already clears the navigation bar.
     Card(
-        modifier = Modifier.fillMaxWidth().navigationBarsPadding().padding(12.dp),
+        modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 8.dp),
         shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
     ) {
