@@ -189,7 +189,7 @@ private class PageFetcher(private val context: Context) {
 
     @SuppressLint("SetJavaScriptEnabled")
     private suspend fun webView(url: String, marker: String): String? = withContext(Dispatchers.Main) {
-        suspendCancellableCoroutine { cont ->
+        suspendCancellableCoroutine<String?> { cont ->
             val handler = Handler(Looper.getMainLooper())
             val view = WebView(context.applicationContext)
             var done = false
