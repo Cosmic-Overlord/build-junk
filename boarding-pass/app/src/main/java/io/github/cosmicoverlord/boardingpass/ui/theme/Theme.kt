@@ -5,9 +5,14 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.WindowCompat
+import io.github.cosmicoverlord.boardingpass.data.ThemeMode
+import io.github.cosmicoverlord.boardingpass.ui.components.findActivity
 
 private val Light = lightColorScheme(
     primary = Color(0xFF1D3A8A),
@@ -30,25 +35,33 @@ private val Light = lightColorScheme(
     outlineVariant = Color(0xFFD0D4E0),
 )
 
+/** Dark grey rather than black: easier on the eyes and keeps cards and the cabin map distinct. */
 private val Dark = darkColorScheme(
     primary = Color(0xFFB4C5FF),
     onPrimary = Color(0xFF0B1B4D),
-    primaryContainer = Color(0xFF253F8F),
+    primaryContainer = Color(0xFF34488F),
     onPrimaryContainer = Color(0xFFDCE3FF),
-    secondary = Color(0xFF7FD6DD),
+    secondary = Color(0xFF8FD3D9),
     onSecondary = Color(0xFF00363B),
-    secondaryContainer = Color(0xFF00505A),
+    secondaryContainer = Color(0xFF285A60),
     onSecondaryContainer = Color(0xFFCDEFF1),
     tertiary = Color(0xFFCDBDFF),
-    background = Color(0xFF101318),
-    surface = Color(0xFF101318),
-    surfaceContainerLowest = Color(0xFF0B0E12),
-    surfaceContainerLow = Color(0xFF181B21),
-    surfaceContainer = Color(0xFF1C2027),
-    surfaceContainerHigh = Color(0xFF262A32),
-    surfaceVariant = Color(0xFF30343D),
-    onSurfaceVariant = Color(0xFFC3C7D3),
-    outlineVariant = Color(0xFF3F4450),
+    onTertiary = Color(0xFF2E1A66),
+    tertiaryContainer = Color(0xFF4A3D73),
+    onTertiaryContainer = Color(0xFFE8DEFF),
+    background = Color(0xFF26272B),
+    onBackground = Color(0xFFE4E5EA),
+    surface = Color(0xFF26272B),
+    onSurface = Color(0xFFE4E5EA),
+    surfaceContainerLowest = Color(0xFF3A3C42),
+    surfaceContainerLow = Color(0xFF2F3135),
+    surfaceContainer = Color(0xFF2B2D31),
+    surfaceContainerHigh = Color(0xFF34363B),
+    surfaceContainerHighest = Color(0xFF3D3F45),
+    surfaceVariant = Color(0xFF45474E),
+    onSurfaceVariant = Color(0xFFC3C6CF),
+    outline = Color(0xFF8D9099),
+    outlineVariant = Color(0xFF52555D),
 )
 
 @Immutable
@@ -62,6 +75,22 @@ val LocalStatusColors = staticCompositionLocalOf {
 val HeroGradient = listOf(Color(0xFF1D3A8A), Color(0xFF0E7C86))
 
 @Composable
-fun BoardingTheme(content: @Composable () -> Unit) {
-    MaterialTheme(colorScheme = if (isSystemInDarkTheme()) Dark else Light, content = content)
+fun BoardingTheme(mode: ThemeMode = ThemeMode.SYSTEM, content: @Composable () -> Unit) {
+    val dark = when (mode) {
+        ThemeMode.SYSTEM -> isSystemInDarkTheme()
+        ThemeMode.LIGHT -> false
+        ThemeMode.DARK -> true
+    }
+    val view = LocalView.current
+    if (!view.isInEditMode) {
+        // The app's choice can differ from the system's, so set bar icon contrast explicitly.
+        SideEffect {
+            val window = view.context.findActivity()?.window ?: return@SideEffect
+            WindowCompat.getInsetsController(window, view).apply {
+                isAppearanceLightStatusBars = !dark
+                isAppearanceLightNavigationBars = !dark
+            }
+        }
+    }
+    MaterialTheme(colorScheme = if (dark) Dark else Light, content = content)
 }

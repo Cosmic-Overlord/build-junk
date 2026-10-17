@@ -113,6 +113,28 @@ class SeatMapsTest {
     }
 
     @Test
+    fun parsesCabinOutline() {
+        val withPath = mapV1 + """
+            <div id="plane-vector-carpet" class="comp-plane_carpet plane-wrap" style="width: 1088px; margin: 0px 0px 0px -544px; transform: scale(0.365);">
+            <svg viewBox="0 0 837.4 7726.5"><path id="floor" class="plane-vector_carpet" d="M745,995.9l7-2.1L86,995.9Z"></path></svg></div>
+        """.trimIndent()
+        val o = SeatMapsParser.parseSeatMap(withPath, "v1").outline!!
+        assertEquals("M745,995.9l7-2.1L86,995.9Z", o.path)
+        assertEquals(837.4f, o.viewBoxW)
+        assertEquals(-544f, o.left)
+        assertEquals(1088f / 837.4f, o.scale, 0.0001f)
+
+        val withPolygon = mapV2 + """
+            <div id="plane-vector-carpet" style="width: 1100px; margin: 0px 0px 0px -548px;"><svg viewBox="0 0 842.1 5799.7">
+            <polygon class="plane-vector_carpet" points="666.3 632.1 691.2 774.2 170.9 632.1"></polygon></svg></div>
+        """.trimIndent()
+        val p = SeatMapsParser.parseSeatMap(withPolygon, "v2").outline!!
+        assertEquals("M666.3 632.1 L691.2 774.2 L170.9 632.1 Z", p.path)
+        assertEquals(-548f, p.left)
+        assertNull(SeatMapsParser.parseSeatMap(mapV1, "v1").outline)
+    }
+
+    @Test
     fun picksVariantsBySeatAndCabin() {
         val maps = listOf(SeatMapsParser.parseSeatMap(mapV1, "v1"), SeatMapsParser.parseSeatMap(mapV2, "v2"))
         assertEquals(listOf("v1"), SeatMapLogic.candidates(maps, "1A", "J"))

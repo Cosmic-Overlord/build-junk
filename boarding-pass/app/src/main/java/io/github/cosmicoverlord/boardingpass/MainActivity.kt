@@ -8,7 +8,9 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
+import androidx.compose.runtime.getValue
 import androidx.core.content.IntentCompat
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.cosmicoverlord.boardingpass.tracking.Notifications
 import io.github.cosmicoverlord.boardingpass.ui.AppRoot
 import io.github.cosmicoverlord.boardingpass.ui.AppViewModel
@@ -26,7 +28,8 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         if (savedInstanceState == null) handleIntent(intent)
         setContent {
-            BoardingTheme {
+            val settings by vm.settings.collectAsStateWithLifecycle()
+            BoardingTheme(settings.theme) {
                 AppRoot(vm)
             }
         }

@@ -54,6 +54,7 @@ import io.github.cosmicoverlord.boardingpass.core.I18n
 import io.github.cosmicoverlord.boardingpass.core.status.ProviderType
 import io.github.cosmicoverlord.boardingpass.core.tr
 import io.github.cosmicoverlord.boardingpass.data.AppLanguage
+import io.github.cosmicoverlord.boardingpass.data.ThemeMode
 import io.github.cosmicoverlord.boardingpass.tracking.Notifications
 import io.github.cosmicoverlord.boardingpass.ui.AppViewModel
 import io.github.cosmicoverlord.boardingpass.ui.components.SectionCard
@@ -266,6 +267,21 @@ fun SettingsScreen(vm: AppViewModel, onBack: () -> Unit) {
                                 }
                             },
                             shape = SegmentedButtonDefaults.itemShape(index, languages.size),
+                        ) { Text(label) }
+                    }
+                }
+                Text(tr("Тема", "Theme"), style = MaterialTheme.typography.titleSmall)
+                val themes = listOf(
+                    ThemeMode.SYSTEM to tr("Системная", "System"),
+                    ThemeMode.LIGHT to tr("Светлая", "Light"),
+                    ThemeMode.DARK to tr("Тёмная", "Dark"),
+                )
+                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                    themes.forEachIndexed { index, (mode, label) ->
+                        SegmentedButton(
+                            selected = settings.theme == mode,
+                            onClick = { vm.updateSettings { it.copy(theme = mode) } },
+                            shape = SegmentedButtonDefaults.itemShape(index, themes.size),
                         ) { Text(label) }
                     }
                 }

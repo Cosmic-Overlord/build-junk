@@ -126,7 +126,7 @@ class SeatMapRepository(private val context: Context) {
         }
 
     private suspend fun seatMap(id: String, force: Boolean): SeatMap =
-        cached("map-${safe(id)}.json", SeatMap.serializer(), DAY * 90, force) {
+        cached("map2-${safe(id)}.json", SeatMap.serializer(), DAY * 90, force) {
             SeatMapsParser.parseSeatMap(pages.fetch(SeatMapsUrls.seatMap(id), SeatMapsUrls.SEATMAP_MARKER), id)
         }
 

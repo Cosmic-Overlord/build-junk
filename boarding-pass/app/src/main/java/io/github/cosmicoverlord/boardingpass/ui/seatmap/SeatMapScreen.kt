@@ -26,7 +26,9 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Flight
 import androidx.compose.material.icons.filled.Language
+import androidx.compose.material.icons.filled.LocalCafe
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Wc
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -53,10 +55,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.vector.PathParser
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalUriHandler
@@ -82,6 +91,7 @@ import io.github.cosmicoverlord.boardingpass.ui.theme.LocalStatusColors
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.max
+import kotlin.math.min
 
 /** Full-screen cabin layout with the pass's seat highlighted. Downloads only when opened. */
 @Composable
@@ -319,30 +329,113 @@ private fun SeatInfo(map: SeatMap, seat: SmSeat?, mine: Boolean, mySeat: String?
     }
 }
 
+/**
+ * Cabin extents and outline in the site's units (x from the centre line). The outline is the
+ * site's own floor shape when the page has one, else a generic tapered nose and tail.
+ */
+private class CabinGeometry(
+    val outline: Path,
+    /** Maps outline coordinates to site units: site = offset + point * outlineScale. */
+    val outlineOffsetX: Float,
+    val outlineScale: Float,
+    val half: Float,
+    val top: Float,
+    val bottom: Float,
+    val rows: Map<Int, List<SmSeat>>,
+    val aisleX: Float?,
+) {
+    companion object {
+        fun of(map: SeatMap): CabinGeometry {
+            val items = map.seats.map { Rect(it.x, it.y, it.x + it.w, it.y + it.h) } +
+                (map.blocks + map.stickers).map { Rect(it.x, it.y, it.x + it.w, it.y + it.h) }
+            var left = items.minOf { it.left }
+            var right = items.maxOf { it.right }
+            var top = items.minOf { it.top }
+            var bottom = items.maxOf { it.bottom }
+
+            val site = map.outline?.let { o ->
+                runCatching { PathParser().parsePathString(o.path).toPath() }.getOrNull()?.let { it to o }
+            }
+            val outline: Path
+            val offsetX: Float
+            val k: Float
+            if (site != null) {
+                val (path, o) = site
+                val b = path.getBounds()
+                outline = path
+                offsetX = o.left
+                k = o.scale
+                left = min(left, o.left + b.left * k)
+                right = max(right, o.left + b.right * k)
+                top = min(top, b.top * k)
+                bottom = max(bottom, b.bottom * k)
+            } else {
+                val w = max(abs(left), abs(right)) + 40f
+                val t = top - 60f
+                val bt = bottom + 60f
+                val nose = w * 1.1f
+                val tail = w * 1.5f
+                outline = Path().apply {
+                    moveTo(-w, t)
+                    cubicTo(-w, t - nose * 0.55f, -w * 0.55f, t - nose, 0f, t - nose)
+                    cubicTo(w * 0.55f, t - nose, w, t - nose * 0.55f, w, t)
+                    lineTo(w, bt)
+                    cubicTo(w, bt + tail * 0.5f, w * 0.4f, bt + tail * 0.9f, w * 0.25f, bt + tail)
+                    lineTo(-w * 0.25f, bt + tail)
+                    cubicTo(-w * 0.4f, bt + tail * 0.9f, -w, bt + tail * 0.5f, -w, bt)
+                    close()
+                }
+                offsetX = 0f
+                k = 1f
+                left = -w
+                right = w
+                top = t - nose
+                bottom = bt + tail
+            }
+
+            val rows = map.seats.groupBy { it.row }
+            val seatW = map.seats.map { it.w }.average().toFloat()
+            val aisles = rows.values.mapNotNull { r -> widestGap(r)?.takeIf { it.second > seatW * 0.5f }?.first }.sorted()
+            return CabinGeometry(
+                outline = outline,
+                outlineOffsetX = offsetX,
+                outlineScale = k,
+                half = max(abs(left), abs(right)) + 16f,
+                top = top - 24f,
+                bottom = bottom + 24f,
+                rows = rows,
+                aisleX = aisles.getOrNull(aisles.size / 2),
+            )
+        }
+
+        /** Centre and width of the widest gap between neighbouring seats of a row. */
+        fun widestGap(row: List<SmSeat>): Pair<Float, Float>? =
+            row.sortedBy { it.x }.zipWithNext()
+                .map { (a, b) -> (a.x + a.w + b.x) / 2 to b.x - (a.x + a.w) }
+                .maxByOrNull { it.second }
+    }
+}
+
 /** Draws the cabin from the site's coordinates; x is relative to the fuselage centre line. */
 @Composable
 private fun SeatCanvas(map: SeatMap, mySeat: String?, selected: String?, onSelect: (SmSeat) -> Unit) {
     val scheme = MaterialTheme.colorScheme
     val exitColor = LocalStatusColors.current.bad
     val measurer = rememberTextMeasurer(cacheSize = 256)
-    val boxes = map.seats.map { Triple(it.x, it.y, it.x + it.w) } +
-        map.blocks.map { Triple(it.x, it.y, it.x + it.w) } + map.stickers.map { Triple(it.x, it.y, it.x + it.w) }
-    val half = boxes.maxOf { max(abs(it.first), abs(it.third)) } + 70f
-    val nose = half * 1.3f
-    val top = (map.seats.minOf { it.y }.coerceAtMost(boxes.minOf { it.second })) - nose
-    val bottom = max(map.seats.maxOf { it.y + it.h }, (map.blocks + map.stickers).maxOfOrNull { it.y + it.h } ?: 0f) + 160f
-    val rows = remember(map.id) { map.seats.groupBy { it.row } }
+    val wcIcon = rememberVectorPainter(Icons.Default.Wc)
+    val galleyIcon = rememberVectorPainter(Icons.Default.LocalCafe)
+    val geo = remember(map.id) { CabinGeometry.of(map) }
 
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val local = LocalDensity.current
         val widthPx = with(local) { maxWidth.toPx() }
-        val scale = widthPx / (half * 2f)
-        val heightDp = with(local) { ((bottom - top) * scale).toDp() }
+        val scale = widthPx / (geo.half * 2f)
+        val heightDp = with(local) { ((geo.bottom - geo.top) * scale).toDp() }
         val viewport = with(local) { maxHeight.toPx() }
         val scroll = rememberScrollState()
         LaunchedEffect(map.id, mySeat) {
             val seat = mySeat?.let { map.seat(it) } ?: return@LaunchedEffect
-            scroll.scrollTo(((seat.y - top) * scale - viewport / 2).toInt().coerceAtLeast(0))
+            scroll.scrollTo(((seat.y - geo.top) * scale - viewport / 2).toInt().coerceAtLeast(0))
         }
         Column(Modifier.fillMaxSize().verticalScroll(scroll)) {
             Canvas(
@@ -351,29 +444,24 @@ private fun SeatCanvas(map: SeatMap, mySeat: String?, selected: String?, onSelec
                     .height(heightDp)
                     .pointerInput(map.id) {
                         detectTapGestures { o ->
-                            val mx = o.x / scale - half
-                            val my = o.y / scale + top
+                            val mx = o.x / scale - geo.half
+                            val my = o.y / scale + geo.top
                             map.seats.firstOrNull { mx >= it.x && mx <= it.x + it.w && my >= it.y && my <= it.y + it.h }?.let(onSelect)
                         }
                     },
             ) {
-                fun ox(x: Float) = (x + half) * scale
-                fun oy(y: Float) = (y - top) * scale
+                fun ox(x: Float) = (x + geo.half) * scale
+                fun oy(y: Float) = (y - geo.top) * scale
 
-                // Fuselage with a rounded nose and tail.
-                drawRoundRect(
-                    color = scheme.surfaceContainerHigh,
-                    topLeft = Offset(ox(-half + 20f), oy(top + 20f)),
-                    size = Size((half * 2 - 40f) * scale, (bottom - top - 40f) * scale),
-                    cornerRadius = CornerRadius(half * scale, nose * scale),
-                )
-                drawRoundRect(
-                    color = scheme.outlineVariant,
-                    topLeft = Offset(ox(-half + 20f), oy(top + 20f)),
-                    size = Size((half * 2 - 40f) * scale, (bottom - top - 40f) * scale),
-                    cornerRadius = CornerRadius(half * scale, nose * scale),
-                    style = Stroke(width = 2.dp.toPx()),
-                )
+                // Cabin floor in its own coordinates: screen = translate + (scale * outlineScale) * point.
+                val k = scale * geo.outlineScale
+                withTransform({
+                    translate(ox(geo.outlineOffsetX), oy(0f))
+                    scale(k, k, pivot = Offset.Zero)
+                }) {
+                    drawPath(geo.outline, scheme.surfaceContainerHigh)
+                    drawPath(geo.outline, scheme.outlineVariant, style = Stroke(width = 2.dp.toPx() / k))
+                }
 
                 map.blocks.forEach { b ->
                     drawRoundRect(
@@ -384,20 +472,24 @@ private fun SeatCanvas(map: SeatMap, mySeat: String?, selected: String?, onSelec
                     )
                 }
                 map.stickers.forEach { st ->
-                    val label = when (st.kind) {
-                        "l" -> "WC"
-                        "g" -> tr("Кухня", "Galley").take(1)
-                        else -> st.kind.uppercase()
+                    val painter = when (st.kind) {
+                        "l" -> wcIcon
+                        "g" -> galleyIcon
+                        else -> null
+                    } ?: return@forEach
+                    val side = min(st.w, st.h) * scale * 1.1f
+                    translate(ox(st.x + st.w / 2) - side / 2, oy(st.y + st.h / 2) - side / 2) {
+                        with(painter) { draw(Size(side, side), colorFilter = ColorFilter.tint(scheme.onSurfaceVariant)) }
                     }
-                    centeredText(measurer, label, Offset(ox(st.x + st.w / 2), oy(st.y + st.h / 2)), scheme.onSurfaceVariant, 10f)
                 }
 
-                // Exit rows: red marks on both walls.
-                rows.values.filter { r -> r.any { it.has("exitRow") } }.forEach { r ->
-                    val y = r.minOf { it.y } - 40f
-                    val markH = 60f * scale
-                    drawRect(exitColor, Offset(ox(-half + 22f), oy(y) - markH / 2), Size(10f * scale * 2, markH))
-                    drawRect(exitColor, Offset(ox(half - 42f), oy(y) - markH / 2), Size(10f * scale * 2, markH))
+                // Exit rows: red marks just outside the row, on both sides.
+                geo.rows.values.filter { r -> r.any { it.has("exitRow") } }.forEach { r ->
+                    val y = r.minOf { it.y } - 30f
+                    val markW = 14f * scale
+                    val markH = 70f * scale
+                    drawRect(exitColor, Offset(ox(r.minOf { it.x } - 34f) - markW / 2, oy(y) - markH / 2), Size(markW, markH))
+                    drawRect(exitColor, Offset(ox(r.maxOf { it.x + it.w } + 34f) - markW / 2, oy(y) - markH / 2), Size(markW, markH))
                 }
 
                 map.seats.forEach { seat ->
@@ -429,13 +521,13 @@ private fun SeatCanvas(map: SeatMap, mySeat: String?, selected: String?, onSelec
                     }
                 }
 
-                // Row numbers in the widest gap of each row (the aisle).
-                rows.forEach { (row, seats) ->
-                    val sorted = seats.sortedBy { it.x }
-                    val gap = sorted.zipWithNext().maxByOrNull { (a, b) -> b.x - (a.x + a.w) } ?: return@forEach
-                    val cx = (gap.first.x + gap.first.w + gap.second.x) / 2
-                    val cy = sorted.first().y + sorted.first().h * 0.41f
-                    centeredText(measurer, row.toString(), Offset(ox(cx), oy(cy)), scheme.onSurfaceVariant, 10f)
+                // Row numbers in the aisle; rows without one (e.g. a lone left block) use the cabin's aisle.
+                val seatW = map.seats.first().w
+                geo.rows.forEach { (row, seats) ->
+                    val gap = CabinGeometry.widestGap(seats)
+                    val cx = gap?.takeIf { it.second > seatW * 0.5f }?.first ?: geo.aisleX ?: return@forEach
+                    val first = seats.minBy { it.y }
+                    centeredText(measurer, row.toString(), Offset(ox(cx), oy(first.y + first.h * 0.41f)), scheme.onSurfaceVariant, 10f)
                 }
             }
         }

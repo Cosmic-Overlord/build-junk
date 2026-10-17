@@ -46,6 +46,15 @@ data class SmSeat(
 @Serializable
 data class SmBox(val x: Float, val y: Float, val w: Float, val h: Float, val kind: String = "")
 
+/**
+ * The cabin floor outline as the site draws it: SVG path data in a [viewBoxW]-wide box, placed
+ * [width] units wide starting [left] units from the centre line (same units as the seats).
+ */
+@Serializable
+data class SmOutline(val path: String, val viewBoxW: Float, val viewBoxH: Float, val width: Float, val left: Float) {
+    val scale: Float get() = width / viewBoxW
+}
+
 @Serializable
 data class SmClassSpec(val pitch: String? = null, val width: String? = null, val recline: String? = null)
 
@@ -59,6 +68,7 @@ data class SeatMap(
     val stickers: List<SmBox> = emptyList(),
     val floorHeight: Float? = null,
     val classSpecs: Map<String, SmClassSpec> = emptyMap(),
+    val outline: SmOutline? = null,
 ) {
     fun seat(number: String): SmSeat? {
         val n = number.trim().uppercase()
@@ -173,7 +183,37 @@ object SeatMapsParser {
         val floor = Regex("comp-plane_floor\"[^>]*style=\"[^\"]*height:\\s*([\\d.]+)px").find(html)?.groupValues?.get(1)?.toFloatOrNull()
         val specs = attr(Regex("<[^>]*data-seat-class-features=\"[^\"]*\"[^>]*>").find(html)?.value ?: "", "data-seat-class-features")
             ?.let(::classSpecs).orEmpty()
-        return SeatMap(id, seats, blocks, stickers, floor, specs)
+        return SeatMap(id, seats, blocks, stickers, floor, specs, outline(html))
+    }
+
+    /** `<div id="plane-vector-carpet" style="width: 1088px; margin: 0 0 0 -544px"><svg viewBox=…><path|polygon class="plane-vector_carpet">`. */
+    internal fun outline(html: String): SmOutline? {
+        val at = html.indexOf("id=\"plane-vector-carpet\"").takeIf { it >= 0 } ?: return null
+        val tagStart = html.lastIndexOf('<', at)
+        val tagEnd = html.indexOf('>', at).takeIf { it > 0 } ?: return null
+        val style = attr(html.substring(tagStart, tagEnd + 1), "style") ?: return null
+        val width = Regex("width:\\s*([\\d.]+)px").find(style)?.groupValues?.get(1)?.toFloatOrNull() ?: return null
+        val margins = Regex("margin:([^;]+)").find(style)?.groupValues?.get(1)
+            ?.trim()?.split(Regex("\\s+"))?.map { it.removeSuffix("px").toFloatOrNull() }
+        val left = margins?.getOrNull(3) ?: margins?.getOrNull(1) ?: -width / 2
+        val svgEnd = html.indexOf("</svg>", tagEnd).takeIf { it > 0 } ?: return null
+        val svg = html.substring(tagEnd, svgEnd)
+        val box = Regex("viewBox=\"\\s*[-\\d.]+[\\s,]+[-\\d.]+[\\s,]+([\\d.]+)[\\s,]+([\\d.]+)\\s*\"").find(svg) ?: return null
+        val vbW = box.groupValues[1].toFloatOrNull()?.takeIf { it > 0 } ?: return null
+        val vbH = box.groupValues[2].toFloatOrNull() ?: return null
+        val shape = Regex("<(path|polygon)\\b[^>]*>").findAll(svg).firstOrNull { m ->
+            val cls = attr(m.value, "class").orEmpty()
+            "plane-vector_carpet" in cls || attr(m.value, "id") == "floor"
+        } ?: return null
+        val path = if (shape.groupValues[1] == "path") {
+            attr(shape.value, "d") ?: return null
+        } else {
+            val nums = Regex("-?\\d+(?:\\.\\d+)?").findAll(attr(shape.value, "points") ?: return null).map { it.value }.toList()
+            if (nums.size < 6) return null
+            nums.chunked(2).filter { it.size == 2 }.mapIndexed { i, (x, y) -> (if (i == 0) "M" else "L") + "$x $y" }
+                .joinToString(" ") + " Z"
+        }
+        return SmOutline(path, vbW, vbH, width, left)
     }
 
     // ------------------------------------------------------------------ helpers

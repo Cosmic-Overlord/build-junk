@@ -21,6 +21,8 @@ enum class AppLanguage(val tag: String) {
     }
 }
 
+enum class ThemeMode { SYSTEM, LIGHT, DARK }
+
 data class AppSettings(
     val provider: ProviderType = ProviderType.NONE,
     val keys: Map<ProviderType, String> = emptyMap(),
@@ -32,6 +34,7 @@ data class AppSettings(
     val edgeMarginMm: Int = DEFAULT_EDGE_MARGIN_MM,
     val language: AppLanguage = AppLanguage.SYSTEM,
     val animations: Boolean = true,
+    val theme: ThemeMode = ThemeMode.SYSTEM,
     /** Frequent refresh during the hour before departure. */
     val rushEnabled: Boolean = true,
     val rushIntervalMinutes: Int = 2,
@@ -67,6 +70,7 @@ class SettingsStore(context: Context) {
         edgeMarginMm = prefs.getInt("edge_margin_mm", AppSettings.DEFAULT_EDGE_MARGIN_MM),
         language = language(prefs.getString(KEY_LANGUAGE, null)),
         animations = prefs.getBoolean("animations", true),
+        theme = runCatching { ThemeMode.valueOf(prefs.getString("theme", null) ?: "SYSTEM") }.getOrDefault(ThemeMode.SYSTEM),
         rushEnabled = prefs.getBoolean("rush_enabled", true),
         rushIntervalMinutes = prefs.getInt("rush_interval", 2),
     )
@@ -81,6 +85,7 @@ class SettingsStore(context: Context) {
             putInt("edge_margin_mm", s.edgeMarginMm)
             putString(KEY_LANGUAGE, s.language.name)
             putBoolean("animations", s.animations)
+            putString("theme", s.theme.name)
             putBoolean("rush_enabled", s.rushEnabled)
             putInt("rush_interval", s.rushIntervalMinutes)
         }.apply()
