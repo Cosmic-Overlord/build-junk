@@ -30,6 +30,7 @@ import kotlinx.coroutines.withContext
 import kotlin.coroutines.resume
 import kotlin.math.max
 import kotlin.math.roundToInt
+import io.github.cosmicoverlord.boardingpass.core.tr
 
 /** Finds boarding-pass barcodes in pictures and PDF pages: ML Kit first, ZXing as a fallback. */
 class BarcodeDecoder(private val context: Context) {
@@ -37,7 +38,7 @@ class BarcodeDecoder(private val context: Context) {
 
     suspend fun decodeImage(uri: Uri): List<DecodedCode> {
         val bitmap = withContext(Dispatchers.IO) { loadBitmap(uri, MAX_IMAGE_SIDE) }
-            ?: throw ImportException("Не удалось открыть изображение")
+            ?: throw ImportException(tr("Не удалось открыть изображение", "Couldn't open the image"))
         return try {
             decodeBitmap(bitmap)
         } finally {
@@ -47,13 +48,13 @@ class BarcodeDecoder(private val context: Context) {
 
     suspend fun decodePdf(uri: Uri): List<DecodedCode> = withContext(Dispatchers.IO) {
         val pfd = context.contentResolver.openFileDescriptor(uri, "r")
-            ?: throw ImportException("Не удалось открыть PDF")
+            ?: throw ImportException(tr("Не удалось открыть PDF", "Couldn't open the PDF"))
         val found = LinkedHashMap<String, DecodedCode>()
         try {
             val renderer = try {
                 PdfRenderer(pfd)
             } catch (e: Exception) {
-                throw ImportException("PDF повреждён или защищён паролем")
+                throw ImportException(tr("PDF повреждён или защищён паролем", "The PDF is damaged or password protected"))
             }
             try {
                 for (i in 0 until minOf(renderer.pageCount, MAX_PDF_PAGES)) {

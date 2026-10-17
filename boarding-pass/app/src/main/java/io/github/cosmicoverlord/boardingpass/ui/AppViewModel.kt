@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import io.github.cosmicoverlord.boardingpass.core.tr
 
 sealed interface UiEvent {
     data class OpenPass(val id: String) : UiEvent
@@ -82,9 +83,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             _events.send(
                 UiEvent.Message(
                     when {
-                        newCount == 0 -> "Этот посадочный уже сохранён"
-                        newCount == 1 -> "Посадочный талон добавлен"
-                        else -> "Добавлено талонов: $newCount"
+                        newCount == 0 -> tr("Этот посадочный уже сохранён", "This boarding pass is already saved")
+                        newCount == 1 -> tr("Посадочный талон добавлен", "Boarding pass added")
+                        else -> tr("Добавлено талонов: $newCount", "Passes added: $newCount")
                     },
                 ),
             )
@@ -110,7 +111,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             try {
                 AppGraph.statusUpdater.refresh(id)
             } catch (e: StatusException) {
-                if (!quiet) _events.send(UiEvent.Message(e.message ?: "Не удалось обновить статус"))
+                if (!quiet) _events.send(UiEvent.Message(e.message ?: tr("Не удалось обновить статус", "Couldn't refresh the status")))
             } finally {
                 _refreshing.update { it - id }
             }
@@ -122,7 +123,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             _refreshing.update { it + ALL }
             try {
                 if (!settings.value.trackingEnabled) {
-                    _events.send(UiEvent.Message("Чтобы получать статус рейсов, выберите источник в настройках"))
+                    _events.send(UiEvent.Message(tr("Чтобы получать статус рейсов, выберите источник в настройках", "To get flight status, choose a source in Settings")))
                 } else {
                     AppGraph.statusUpdater.refreshStale(maxAgeMs = 0)
                 }

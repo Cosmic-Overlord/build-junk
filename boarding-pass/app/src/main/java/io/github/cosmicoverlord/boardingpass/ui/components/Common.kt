@@ -26,13 +26,14 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import io.github.cosmicoverlord.boardingpass.core.I18n
 import io.github.cosmicoverlord.boardingpass.core.model.StatusKind
+import io.github.cosmicoverlord.boardingpass.core.tr
 import io.github.cosmicoverlord.boardingpass.ui.theme.LocalStatusColors
 import java.time.Duration
 import java.time.LocalDate
 import java.time.OffsetDateTime
 import java.time.format.DateTimeFormatter
-import java.util.Locale
 
 @Composable
 fun statusColor(kind: StatusKind): Color {
@@ -128,19 +129,16 @@ fun IconLine(icon: ImageVector, text: String, modifier: Modifier = Modifier, col
 }
 
 object Fmt {
-    private val ru = Locale.getDefault()
-    private val dayMonth = DateTimeFormatter.ofPattern("EEE, d MMMM", ru)
-    private val dayMonthYear = DateTimeFormatter.ofPattern("EEE, d MMMM yyyy", ru)
     private val hm = DateTimeFormatter.ofPattern("HH:mm")
-    private val shortDate = DateTimeFormatter.ofPattern("d MMM", ru)
+    private fun pattern(p: String) = DateTimeFormatter.ofPattern(p, I18n.locale)
 
     fun date(d: LocalDate?, today: LocalDate = LocalDate.now()): String {
-        d ?: return "Дата неизвестна"
-        val base = (if (d.year == today.year) dayMonth else dayMonthYear).format(d)
+        d ?: return tr("Дата неизвестна", "Date unknown")
+        val base = pattern(if (d.year == today.year) "EEE, d MMMM" else "EEE, d MMMM yyyy").format(d)
         val rel = when (d) {
-            today -> "сегодня"
-            today.plusDays(1) -> "завтра"
-            today.minusDays(1) -> "вчера"
+            today -> tr("сегодня", "today")
+            today.plusDays(1) -> tr("завтра", "tomorrow")
+            today.minusDays(1) -> tr("вчера", "yesterday")
             else -> null
         }
         return if (rel != null) "$base · $rel" else base
@@ -152,7 +150,7 @@ object Fmt {
     fun timeOn(t: OffsetDateTime?, flightDate: LocalDate?): String? {
         t ?: return null
         val s = t.format(hm)
-        return if (flightDate != null && t.toLocalDate() != flightDate) "$s (${t.format(shortDate)})" else s
+        return if (flightDate != null && t.toLocalDate() != flightDate) "$s (${t.format(pattern("d MMM"))})" else s
     }
 
     fun delay(scheduled: OffsetDateTime?, actual: OffsetDateTime?): String? {
@@ -165,16 +163,19 @@ object Fmt {
         }
     }
 
-    fun duration(minutes: Long): String = if (minutes >= 60) "${minutes / 60} ч ${minutes % 60} мин" else "$minutes мин"
+    fun duration(minutes: Long): String {
+        val min = tr("мин", "min")
+        return if (minutes >= 60) "${minutes / 60} ${tr("ч", "h")} ${minutes % 60} $min" else "$minutes $min"
+    }
 
     fun ago(millis: Long?, now: Long = System.currentTimeMillis()): String {
-        millis ?: return "никогда"
+        millis ?: return tr("никогда", "never")
         val m = (now - millis) / 60_000
         return when {
-            m < 1 -> "только что"
-            m < 60 -> "$m мин назад"
-            m < 24 * 60 -> "${m / 60} ч назад"
-            else -> "${m / (24 * 60)} дн назад"
+            m < 1 -> tr("только что", "just now")
+            m < 60 -> tr("$m мин назад", "$m min ago")
+            m < 24 * 60 -> tr("${m / 60} ч назад", "${m / 60} h ago")
+            else -> tr("${m / (24 * 60)} дн назад", "${m / (24 * 60)} d ago")
         }
     }
 }

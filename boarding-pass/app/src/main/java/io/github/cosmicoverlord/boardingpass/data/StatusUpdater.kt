@@ -7,6 +7,7 @@ import io.github.cosmicoverlord.boardingpass.core.status.FlightQuery
 import io.github.cosmicoverlord.boardingpass.core.status.StatusDiff
 import io.github.cosmicoverlord.boardingpass.core.status.StatusException
 import io.github.cosmicoverlord.boardingpass.core.status.createProvider
+import io.github.cosmicoverlord.boardingpass.core.tr
 import kotlinx.coroutines.CancellationException
 import java.time.LocalDate
 
@@ -20,7 +21,7 @@ class StatusUpdater(
 ) {
     /** Refresh one pass and every other pass on the same flight (e.g. travelling together). */
     suspend fun refresh(id: String): FlightUpdate {
-        val pass = repo.get(id) ?: throw StatusException("Талон не найден")
+        val pass = repo.get(id) ?: throw StatusException(tr("Талон не найден", "Boarding pass not found"))
         return refreshGroup(repo.passes.value.filter { it.flightKey == pass.flightKey })
     }
 
@@ -33,6 +34,20 @@ class StatusUpdater(
             .values
             .mapNotNull { group -> runCatching { refreshGroup(group) }.getOrNull() }
     }
+
+    /** Pre-departure refresh of specific flights; failures are kept on the passes, not thrown. */
+    suspend fun refreshFlights(keys: Set<String>): List<FlightUpdate> =
+        repo.passes.value
+            .filter { it.flightKey in keys }
+            .groupBy { it.flightKey }
+            .values
+            .mapNotNull { group ->
+                try {
+                    refreshGroup(group)
+                } catch (e: StatusException) {
+                    null
+                }
+            }
 
     /** Foreground refresh of trackable flights whose status is older than [maxAgeMs]. */
     suspend fun refreshStale(maxAgeMs: Long) {
@@ -50,9 +65,11 @@ class StatusUpdater(
         val first = group.first()
         val s = settings.state.value
         val provider = createProvider(s.provider, s.key())
-            ?: throw StatusException("Источник статуса рейса не выбран — откройте настройки")
-        val date = first.date ?: throw StatusException("Неизвестна дата рейса")
-        if (first.carrier.isBlank() || first.flightNumber.isBlank()) throw StatusException("Не указан номер рейса")
+            ?: throw StatusException(tr("Источник статуса рейса не выбран — откройте настройки", "No flight status source — open Settings"))
+        val date = first.date ?: throw StatusException(tr("Неизвестна дата рейса", "The flight date is unknown"))
+        if (first.carrier.isBlank() || first.flightNumber.isBlank()) {
+            throw StatusException(tr("Не указан номер рейса", "The flight number is missing"))
+        }
 
         val db = airports()
         val q = FlightQuery(first.carrier, first.flightNumber, date, first.from, first.to, db[first.from]?.zone, db[first.to]?.zone)
@@ -68,7 +85,7 @@ class StatusUpdater(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            val error = e as? StatusException ?: StatusException("Ошибка: ${e.message ?: e.javaClass.simpleName}")
+            val error = e as? StatusException ?: StatusException(tr("Ошибка", "Error") + ": ${e.message ?: e.javaClass.simpleName}")
             repo.update { list ->
                 list.map { if (it.id in ids) it.copy(statusError = error.message, statusCheckedAt = now) else it }
             }

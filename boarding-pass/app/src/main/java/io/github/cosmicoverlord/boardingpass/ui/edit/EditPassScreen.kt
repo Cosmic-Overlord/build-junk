@@ -44,6 +44,7 @@ import io.github.cosmicoverlord.boardingpass.ui.components.Fmt
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
+import io.github.cosmicoverlord.boardingpass.core.tr
 
 @Composable
 fun EditPassScreen(vm: AppViewModel, passId: String, onClose: () -> Unit, onSaved: () -> Unit) {
@@ -87,9 +88,9 @@ fun EditPassScreen(vm: AppViewModel, passId: String, onClose: () -> Unit, onSave
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(if (pass.parsed) "Изменить талон" else "Данные рейса") },
-                navigationIcon = { IconButton(onClick = onClose) { Icon(Icons.Default.Close, contentDescription = "Закрыть") } },
-                actions = { TextButton(onClick = ::save) { Text("Сохранить") } },
+                title = { Text(if (pass.parsed) tr("Изменить талон", "Edit pass") else tr("Данные рейса", "Flight details")) },
+                navigationIcon = { IconButton(onClick = onClose) { Icon(Icons.Default.Close, contentDescription = tr("Закрыть", "Close")) } },
+                actions = { TextButton(onClick = ::save) { Text(tr("Сохранить", "Save")) } },
             )
         },
     ) { padding ->
@@ -103,38 +104,38 @@ fun EditPassScreen(vm: AppViewModel, passId: String, onClose: () -> Unit, onSave
         ) {
             if (!pass.parsed) {
                 Text(
-                    "Код сохранён как есть и будет показываться на весь экран. Заполните рейс и дату — " +
-                        "тогда приложение сможет следить за статусом, терминалом и выходом.",
+                    tr("Код сохранён как есть и будет показываться на весь экран. Заполните рейс и дату — ", "The code is saved as is and is shown full screen. Fill in the flight and date ") +
+                        tr("тогда приложение сможет следить за статусом, терминалом и выходом.", "so the app can track the status, terminal and gate."),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Field("Авиакомпания", carrier, { carrier = it.uppercase().take(3) }, Modifier.weight(1f), hint = "SU")
-                Field("Номер рейса", number, { number = it.uppercase().take(5) }, Modifier.weight(1f), hint = "1234")
+                Field(tr("Авиакомпания", "Airline"), carrier, { carrier = it.uppercase().take(3) }, Modifier.weight(1f), hint = "SU")
+                Field(tr("Номер рейса", "Flight number"), number, { number = it.uppercase().take(5) }, Modifier.weight(1f), hint = "1234")
             }
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Field("Откуда (IATA)", from, { from = code3(it) }, Modifier.weight(1f), hint = "SVO")
-                Field("Куда (IATA)", to, { to = code3(it) }, Modifier.weight(1f), hint = "LED")
+                Field(tr("Откуда (IATA)", "From (IATA)"), from, { from = code3(it) }, Modifier.weight(1f), hint = "SVO")
+                Field(tr("Куда (IATA)", "To (IATA)"), to, { to = code3(it) }, Modifier.weight(1f), hint = "LED")
             }
             listOfNotNull(vm.airports[from]?.let { "$from — ${it.name}" }, vm.airports[to]?.let { "$to — ${it.name}" })
                 .forEach { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             OutlinedButton(onClick = { pickDate = true }, modifier = Modifier.fillMaxWidth()) {
                 Icon(Icons.Default.DateRange, contentDescription = null)
                 Spacer(Modifier.size(8.dp))
-                Text(date?.let { runCatching { Fmt.date(LocalDate.parse(it)) }.getOrNull() } ?: "Выбрать дату вылета")
+                Text(date?.let { runCatching { Fmt.date(LocalDate.parse(it)) }.getOrNull() } ?: tr("Выбрать дату вылета", "Pick the departure date"))
             }
-            Field("Пассажир (ФАМИЛИЯ/ИМЯ)", name, { name = it }, Modifier.fillMaxWidth())
+            Field(tr("Пассажир (ФАМИЛИЯ/ИМЯ)", "Passenger (SURNAME/NAME)"), name, { name = it }, Modifier.fillMaxWidth())
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Field("Бронь (PNR)", pnr, { pnr = it.uppercase().take(7) }, Modifier.weight(1f))
-                Field("Место", seat, { seat = it.uppercase().take(4) }, Modifier.weight(1f), hint = "12A")
+                Field(tr("Бронь (PNR)", "Booking (PNR)"), pnr, { pnr = it.uppercase().take(7) }, Modifier.weight(1f))
+                Field(tr("Место", "Seat"), seat, { seat = it.uppercase().take(4) }, Modifier.weight(1f), hint = "12A")
             }
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Field("Класс (буква)", cabin, { cabin = it.uppercase().take(1) }, Modifier.weight(1f), hint = "Y")
-                Field("Порядковый №", sequence, { sequence = it.take(5) }, Modifier.weight(1f), number = true)
+                Field(tr("Класс (буква)", "Class (letter)"), cabin, { cabin = it.uppercase().take(1) }, Modifier.weight(1f), hint = "Y")
+                Field(tr("Порядковый №", "Sequence no."), sequence, { sequence = it.take(5) }, Modifier.weight(1f), number = true)
             }
             Spacer(Modifier.height(8.dp))
-            Button(onClick = ::save, modifier = Modifier.fillMaxWidth()) { Text("Сохранить") }
+            Button(onClick = ::save, modifier = Modifier.fillMaxWidth()) { Text(tr("Сохранить", "Save")) }
         }
     }
 
@@ -149,7 +150,7 @@ fun EditPassScreen(vm: AppViewModel, passId: String, onClose: () -> Unit, onSave
                     pickDate = false
                 }) { Text("OK") }
             },
-            dismissButton = { TextButton(onClick = { pickDate = false }) { Text("Отмена") } },
+            dismissButton = { TextButton(onClick = { pickDate = false }) { Text(tr("Отмена", "Cancel")) } },
         ) {
             DatePicker(state)
         }

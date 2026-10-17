@@ -1,10 +1,25 @@
 package io.github.cosmicoverlord.boardingpass.data
 
 import android.content.Context
+import io.github.cosmicoverlord.boardingpass.core.I18n
+import io.github.cosmicoverlord.boardingpass.core.Lang
 import io.github.cosmicoverlord.boardingpass.core.status.ProviderType
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+
+enum class AppLanguage(val tag: String) {
+    SYSTEM(""),
+    RU("ru"),
+    EN("en"),
+    ;
+
+    fun resolve(): Lang = when (this) {
+        SYSTEM -> I18n.systemLang()
+        RU -> Lang.RU
+        EN -> Lang.EN
+    }
+}
 
 data class AppSettings(
     val provider: ProviderType = ProviderType.NONE,
@@ -15,6 +30,11 @@ data class AppSettings(
     val askedNotificationPermission: Boolean = false,
     /** Keeps the full-screen code off the curved display edges, in millimetres. */
     val edgeMarginMm: Int = DEFAULT_EDGE_MARGIN_MM,
+    val language: AppLanguage = AppLanguage.SYSTEM,
+    val animations: Boolean = true,
+    /** Frequent refresh during the hour before departure. */
+    val rushEnabled: Boolean = true,
+    val rushIntervalMinutes: Int = 2,
 ) {
     fun key(type: ProviderType = provider): String = keys[type].orEmpty()
     val trackingEnabled: Boolean get() = provider != ProviderType.NONE && key().isNotBlank()
@@ -26,7 +46,7 @@ data class AppSettings(
 }
 
 class SettingsStore(context: Context) {
-    private val prefs = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
+    private val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
     private val _state = MutableStateFlow(read())
     val state: StateFlow<AppSettings> = _state.asStateFlow()
 
@@ -45,6 +65,10 @@ class SettingsStore(context: Context) {
         notifications = prefs.getBoolean("notifications", true),
         askedNotificationPermission = prefs.getBoolean("asked_notifications", false),
         edgeMarginMm = prefs.getInt("edge_margin_mm", AppSettings.DEFAULT_EDGE_MARGIN_MM),
+        language = language(prefs.getString(KEY_LANGUAGE, null)),
+        animations = prefs.getBoolean("animations", true),
+        rushEnabled = prefs.getBoolean("rush_enabled", true),
+        rushIntervalMinutes = prefs.getInt("rush_interval", 2),
     )
 
     private fun write(s: AppSettings) {
@@ -55,6 +79,22 @@ class SettingsStore(context: Context) {
             putBoolean("notifications", s.notifications)
             putBoolean("asked_notifications", s.askedNotificationPermission)
             putInt("edge_margin_mm", s.edgeMarginMm)
+            putString(KEY_LANGUAGE, s.language.name)
+            putBoolean("animations", s.animations)
+            putBoolean("rush_enabled", s.rushEnabled)
+            putInt("rush_interval", s.rushIntervalMinutes)
         }.apply()
+    }
+
+    companion object {
+        private const val PREFS = "settings"
+        private const val KEY_LANGUAGE = "language"
+
+        private fun language(name: String?) =
+            runCatching { AppLanguage.valueOf(name ?: "SYSTEM") }.getOrDefault(AppLanguage.SYSTEM)
+
+        /** For attachBaseContext, which runs before the app graph is ready. */
+        fun peekLanguage(context: Context): AppLanguage =
+            language(context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_LANGUAGE, null))
     }
 }

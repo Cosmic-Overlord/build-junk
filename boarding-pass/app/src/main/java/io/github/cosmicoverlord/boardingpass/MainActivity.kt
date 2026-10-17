@@ -1,5 +1,6 @@
 package io.github.cosmicoverlord.boardingpass
 
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
@@ -15,6 +16,10 @@ import io.github.cosmicoverlord.boardingpass.ui.theme.BoardingTheme
 
 class MainActivity : ComponentActivity() {
     private val vm: AppViewModel by viewModels()
+
+    override fun attachBaseContext(newBase: Context) {
+        super.attachBaseContext(LocaleContext.wrap(newBase))
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)

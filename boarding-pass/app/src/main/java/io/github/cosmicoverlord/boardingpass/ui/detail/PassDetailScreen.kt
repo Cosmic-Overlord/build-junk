@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.AirlineSeatReclineNormal
 import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Schedule
@@ -60,6 +61,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.cosmicoverlord.boardingpass.core.model.BoardingPass
 import io.github.cosmicoverlord.boardingpass.core.model.CodeFormat
 import io.github.cosmicoverlord.boardingpass.core.model.FlightStatus
+import io.github.cosmicoverlord.boardingpass.core.model.PassFactory
 import io.github.cosmicoverlord.boardingpass.core.model.PassText
 import io.github.cosmicoverlord.boardingpass.core.model.toOdt
 import io.github.cosmicoverlord.boardingpass.ui.AppViewModel
@@ -73,6 +75,7 @@ import io.github.cosmicoverlord.boardingpass.ui.components.SectionCard
 import io.github.cosmicoverlord.boardingpass.ui.components.StatusChip
 import io.github.cosmicoverlord.boardingpass.ui.theme.LocalStatusColors
 import java.time.LocalDate
+import io.github.cosmicoverlord.boardingpass.core.tr
 
 @Composable
 fun PassDetailScreen(
@@ -83,6 +86,7 @@ fun PassDetailScreen(
     onShowCode: () -> Unit,
     onEdit: () -> Unit,
     onSettings: () -> Unit,
+    onSeatMap: () -> Unit,
 ) {
     val passes by vm.passes.collectAsStateWithLifecycle()
     val refreshing by vm.refreshing.collectAsStateWithLifecycle()
@@ -93,19 +97,19 @@ fun PassDetailScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(pass?.flightLabel?.ifBlank { null } ?: "Посадочный") },
+                title = { Text(pass?.flightLabel?.ifBlank { null } ?: tr("Посадочный", "Boarding pass")) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Назад") }
+                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = tr("Назад", "Back")) }
                 },
                 actions = {
                     if (pass != null) {
                         if (passId in refreshing) {
                             CircularProgressIndicator(Modifier.padding(12.dp).size(24.dp), strokeWidth = 2.dp)
                         } else {
-                            IconButton(onClick = { vm.refresh(passId) }) { Icon(Icons.Default.Refresh, contentDescription = "Обновить статус") }
+                            IconButton(onClick = { vm.refresh(passId) }) { Icon(Icons.Default.Refresh, contentDescription = tr("Обновить статус", "Refresh status")) }
                         }
-                        IconButton(onClick = onEdit) { Icon(Icons.Default.Edit, contentDescription = "Изменить") }
-                        IconButton(onClick = { confirmDelete = true }) { Icon(Icons.Default.Delete, contentDescription = "Удалить") }
+                        IconButton(onClick = onEdit) { Icon(Icons.Default.Edit, contentDescription = tr("Изменить", "Edit")) }
+                        IconButton(onClick = { confirmDelete = true }) { Icon(Icons.Default.Delete, contentDescription = tr("Удалить", "Delete")) }
                     }
                 },
             )
@@ -113,7 +117,7 @@ fun PassDetailScreen(
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
         if (pass == null) {
-            Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) { Text("Талон удалён") }
+            Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) { Text(tr("Талон удалён", "Pass deleted")) }
             return@Scaffold
         }
         val from = vm.airports[pass.from]
@@ -137,10 +141,17 @@ fun PassDetailScreen(
                 to = to,
                 depTime = Fmt.time(dep),
                 arrTime = Fmt.timeOn(arr, dep?.toLocalDate() ?: pass.date),
-                dateText = Fmt.date(pass.date) + if (pass.legCount > 1) " · сегмент ${pass.legIndex + 1} из ${pass.legCount}" else "",
+                dateText = Fmt.date(pass.date) + if (pass.legCount > 1) tr(" · сегмент ${pass.legIndex + 1} из ${pass.legCount}", " · leg ${pass.legIndex + 1} of ${pass.legCount}") else "",
             )
 
             BarcodeCard(pass, onShowCode)
+
+            // Downloaded only on demand, so opening a pass costs no traffic.
+            OutlinedButton(onClick = onSeatMap, modifier = Modifier.fillMaxWidth(), enabled = pass.carrier.isNotBlank()) {
+                Icon(Icons.Default.AirlineSeatReclineNormal, contentDescription = null)
+                Spacer(Modifier.size(8.dp))
+                Text(tr("Посмотреть схему самолёта", "View the seat map"))
+            }
 
             StatusCard(
                 pass = pass,
@@ -151,30 +162,30 @@ fun PassDetailScreen(
                 onSettings = onSettings,
             )
 
-            SectionCard("Пассажир") {
-                Fact("Имя", PassText.passenger(pass.passengerName).ifBlank { null }, emphasize = true)
+            SectionCard(tr("Пассажир", "Passenger")) {
+                Fact(tr("Имя", "Name"), PassText.passenger(pass.passengerName).ifBlank { null }, emphasize = true)
                 FactRow(
-                    "Место" to pass.seat,
-                    "Класс" to listOfNotNull(pass.compartment.ifBlank { null }, PassText.cabinClass(pass.compartment))
+                    tr("Место", "Seat") to pass.seat,
+                    tr("Класс", "Class") to listOfNotNull(pass.compartment.ifBlank { null }, PassText.cabinClass(pass.compartment))
                         .joinToString(" · ").ifBlank { null },
-                    "Номер" to pass.sequence.ifBlank { null },
+                    tr("Номер", "Sequence") to pass.sequence.ifBlank { null },
                     emphasize = true,
                 )
-                FactRow("Бронь (PNR)" to pass.pnr, "Тип" to pass.passengerType)
+                FactRow(tr("Бронь (PNR)", "Booking (PNR)") to pass.pnr, tr("Тип", "Type") to PassFactory.passengerTypeLabel(pass.passengerType))
                 if (pass.ticketNumber != null || pass.baggageAllowance != null) {
-                    FactRow("Билет" to pass.ticketNumber, "Багаж" to pass.baggageAllowance)
+                    FactRow(tr("Билет", "Ticket") to pass.ticketNumber, tr("Багаж", "Baggage") to PassText.baggage(pass.baggageAllowance))
                 }
                 if (pass.frequentFlyer != null || pass.marketingCarrier != null) {
                     FactRow(
-                        "Бонусная карта" to pass.frequentFlyer,
-                        "Продавец" to pass.marketingCarrier?.let { c -> vm.airlines.name(c)?.let { "$it ($c)" } ?: c },
+                        tr("Бонусная карта", "Frequent flyer") to pass.frequentFlyer,
+                        tr("Продавец", "Marketed by") to pass.marketingCarrier?.let { c -> vm.airlines.name(c)?.let { "$it ($c)" } ?: c },
                     )
                 }
             }
 
-            SectionCard("Аэропорты") {
-                Fact("Вылет", from?.let { "${it.name} (${it.iata})" } ?: pass.from)
-                Fact("Прилёт", to?.let { "${it.name} (${it.iata})" } ?: pass.to)
+            SectionCard(tr("Аэропорты", "Airports")) {
+                Fact(tr("Вылет", "Departure"), from?.let { "${it.name} (${it.iata})" } ?: pass.from)
+                Fact(tr("Прилёт", "Arrival"), to?.let { "${it.name} (${it.iata})" } ?: pass.to)
             }
 
             RawDataCard(pass)
@@ -185,16 +196,16 @@ fun PassDetailScreen(
     if (confirmDelete) {
         AlertDialog(
             onDismissRequest = { confirmDelete = false },
-            title = { Text("Удалить посадочный?") },
-            text = { Text("Талон ${pass?.flightLabel.orEmpty()} будет удалён с устройства.") },
+            title = { Text(tr("Удалить посадочный?", "Delete boarding pass?")) },
+            text = { Text(tr("Талон ${pass?.flightLabel.orEmpty()} будет удалён с устройства.", "Pass ${pass?.flightLabel.orEmpty()} will be deleted from this device.")) },
             confirmButton = {
                 TextButton(onClick = {
                     confirmDelete = false
                     vm.delete(passId)
                     onBack()
-                }) { Text("Удалить") }
+                }) { Text(tr("Удалить", "Delete")) }
             },
-            dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Отмена") } },
+            dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text(tr("Отмена", "Cancel")) } },
         )
     }
 }
@@ -216,7 +227,7 @@ private fun BarcodeCard(pass: BoardingPass, onShowCode: () -> Unit) {
         Button(onClick = onShowCode, modifier = Modifier.fillMaxWidth()) {
             Icon(Icons.Default.Fullscreen, contentDescription = null)
             Spacer(Modifier.size(8.dp))
-            Text("Показать код на весь экран")
+            Text(tr("Показать код на весь экран", "Show code full screen"))
         }
     }
 }
@@ -230,17 +241,17 @@ private fun StatusCard(
     onRefresh: () -> Unit,
     onSettings: () -> Unit,
 ) {
-    SectionCard("Статус рейса") {
+    SectionCard(tr("Статус рейса", "Flight status")) {
         if (!trackingEnabled && status == null) {
             Text(
-                "Чтобы видеть актуальный статус, терминал и выход на посадку, выберите источник данных и укажите API-ключ.",
+                tr("Чтобы видеть актуальный статус, терминал и выход на посадку, выберите источник данных и укажите API-ключ.", "To see the live status, terminal and gate, choose a data source and enter an API key."),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             OutlinedButton(onClick = onSettings) {
                 Icon(Icons.Default.Settings, contentDescription = null)
                 Spacer(Modifier.size(8.dp))
-                Text("Настроить")
+                Text(tr("Настроить", "Set up"))
             }
             return@SectionCard
         }
@@ -252,7 +263,7 @@ private fun StatusCard(
                     Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
-            FactRow("Терминал" to status.depTerminal, "Выход" to status.depGate, "Регистрация" to status.depCheckIn, emphasize = true)
+            FactRow(tr("Терминал", "Terminal") to status.depTerminal, tr("Выход", "Gate") to status.depGate, tr("Регистрация", "Check-in") to status.depCheckIn, emphasize = true)
 
             val date = pass.date
             val depSched = status.depScheduled.toOdt()
@@ -262,13 +273,13 @@ private fun StatusCard(
             val arrEst = status.arrEstimated.toOdt()
             val arrAct = status.arrActual.toOdt()
             val warn = LocalStatusColors.current.warn
-            TimesRow("Вылет", Fmt.timeOn(depSched, date), Fmt.timeOn(depEst, date), Fmt.timeOn(depAct, date), Fmt.delay(depSched, depAct ?: depEst), warn)
-            TimesRow("Прилёт", Fmt.timeOn(arrSched, date), Fmt.timeOn(arrEst, date), Fmt.timeOn(arrAct, date), Fmt.delay(arrSched, arrAct ?: arrEst), warn)
+            TimesRow(tr("Вылет", "Departure"), Fmt.timeOn(depSched, date), Fmt.timeOn(depEst, date), Fmt.timeOn(depAct, date), Fmt.delay(depSched, depAct ?: depEst), warn)
+            TimesRow(tr("Прилёт", "Arrival"), Fmt.timeOn(arrSched, date), Fmt.timeOn(arrEst, date), Fmt.timeOn(arrAct, date), Fmt.delay(arrSched, arrAct ?: arrEst), warn)
             if (status.arrTerminal != null || status.arrGate != null || status.baggageBelt != null) {
-                FactRow("Терминал прилёта" to status.arrTerminal, "Выход" to status.arrGate, "Лента багажа" to status.baggageBelt)
+                FactRow(tr("Терминал прилёта", "Arrival terminal") to status.arrTerminal, tr("Выход", "Gate") to status.arrGate, tr("Лента багажа", "Baggage belt") to status.baggageBelt)
             }
             if (status.aircraftModel != null || status.aircraftReg != null) {
-                FactRow("Самолёт" to status.aircraftModel, "Борт" to status.aircraftReg)
+                FactRow(tr("Самолёт", "Aircraft") to status.aircraftModel, tr("Борт", "Registration") to status.aircraftReg)
             }
         }
         pass.statusError?.let {
@@ -277,15 +288,15 @@ private fun StatusCard(
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconLine(
                 Icons.Default.Schedule,
-                "Обновлено: " + Fmt.ago(status?.fetchedAt ?: pass.statusCheckedAt),
+                tr("Обновлено: ", "Updated: ") + Fmt.ago(status?.fetchedAt ?: pass.statusCheckedAt),
                 Modifier.weight(1f),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            TextButton(onClick = onRefresh, enabled = !refreshing) { Text(if (refreshing) "Обновляю…" else "Обновить") }
+            TextButton(onClick = onRefresh, enabled = !refreshing) { Text(if (refreshing) tr("Обновляю…", "Refreshing…") else tr("Обновить", "Refresh")) }
         }
         if (status == null && pass.date?.isAfter(LocalDate.now().plusDays(2)) == true) {
             Text(
-                "Терминал и выход обычно известны за несколько часов до вылета.",
+                tr("Терминал и выход обычно известны за несколько часов до вылета.", "The terminal and gate are usually known a few hours before departure."),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -304,9 +315,9 @@ private fun TimesRow(label: String, scheduled: String?, estimated: String?, actu
             }
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Fact("План", scheduled, Modifier.weight(1f))
-            Fact("Ожидается", estimated, Modifier.weight(1f))
-            Fact("Факт", actual, Modifier.weight(1f))
+            Fact(tr("План", "Scheduled"), scheduled, Modifier.weight(1f))
+            Fact(tr("Ожидается", "Expected"), estimated, Modifier.weight(1f))
+            Fact(tr("Факт", "Actual"), actual, Modifier.weight(1f))
         }
     }
 }
@@ -321,7 +332,7 @@ private fun RawDataCard(pass: BoardingPass) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                "Данные штрихкода · ${formatName(pass.format)}",
+                tr("Данные штрихкода · ${formatName(pass.format)}", "Barcode data · ${formatName(pass.format)}"),
                 style = MaterialTheme.typography.titleSmall,
                 color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.weight(1f),
@@ -334,7 +345,7 @@ private fun RawDataCard(pass: BoardingPass) {
                 TextButton(onClick = { clipboard.setText(AnnotatedString(pass.barcode)) }) {
                     Icon(Icons.Default.ContentCopy, contentDescription = null)
                     Spacer(Modifier.size(8.dp))
-                    Text("Скопировать")
+                    Text(tr("Скопировать", "Copy"))
                 }
             }
         }
@@ -347,5 +358,5 @@ private fun formatName(f: CodeFormat) = when (f) {
     CodeFormat.PDF_417 -> "PDF417"
     CodeFormat.DATA_MATRIX -> "Data Matrix"
     CodeFormat.CODE_128 -> "Code 128"
-    CodeFormat.OTHER -> "другой"
+    CodeFormat.OTHER -> tr("другой", "other")
 }

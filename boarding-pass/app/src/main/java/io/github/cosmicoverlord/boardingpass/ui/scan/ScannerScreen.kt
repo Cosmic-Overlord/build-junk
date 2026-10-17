@@ -79,6 +79,7 @@ import io.github.cosmicoverlord.boardingpass.core.bcbp.BcbpParser
 import io.github.cosmicoverlord.boardingpass.core.model.DecodedCode
 import io.github.cosmicoverlord.boardingpass.importer.BarcodeDecoder
 import io.github.cosmicoverlord.boardingpass.importer.toDecoded
+import io.github.cosmicoverlord.boardingpass.core.tr
 
 @Composable
 fun ScannerScreen(
@@ -104,18 +105,18 @@ fun ScannerScreen(
         containerColor = Color.Black,
         topBar = {
             TopAppBar(
-                title = { Text("Сканирование") },
+                title = { Text(tr("Сканирование", "Scanning")) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Назад") }
+                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = tr("Назад", "Back")) }
                 },
                 actions = {
                     if (granted) {
                         IconButton(onClick = { torch = !torch }) {
-                            Icon(if (torch) Icons.Default.FlashOff else Icons.Default.FlashOn, contentDescription = "Фонарик")
+                            Icon(if (torch) Icons.Default.FlashOff else Icons.Default.FlashOn, contentDescription = tr("Фонарик", "Flashlight"))
                         }
                     }
                     IconButton(onClick = { pickImage.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }) {
-                        Icon(Icons.Default.PhotoLibrary, contentDescription = "Из галереи")
+                        Icon(Icons.Default.PhotoLibrary, contentDescription = tr("Из галереи", "From the gallery"))
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -141,13 +142,13 @@ fun ScannerScreen(
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     Text(
-                        "Наведите камеру на штрихкод посадочного талона",
+                        tr("Наведите камеру на штрихкод посадочного талона", "Point the camera at the boarding pass barcode"),
                         color = Color.White,
                         textAlign = TextAlign.Center,
                         style = MaterialTheme.typography.bodyLarge,
                     )
                     Text(
-                        "Держите телефон в 20–30 см от кода, коснитесь экрана для фокуса",
+                        tr("Держите телефон в 20–30 см от кода, коснитесь экрана для фокуса", "Hold the phone 20–30 cm from the code, tap to focus"),
                         color = Color.White.copy(alpha = 0.75f),
                         textAlign = TextAlign.Center,
                         style = MaterialTheme.typography.bodySmall,
@@ -183,13 +184,13 @@ fun ScannerScreen(
                 ) {
                     Icon(Icons.Default.QrCodeScanner, contentDescription = null, tint = Color.White, modifier = Modifier.size(64.dp))
                     Text(
-                        "Нужен доступ к камере, чтобы считать штрихкод. Можно также выбрать скриншот из галереи.",
+                        tr("Нужен доступ к камере, чтобы считать штрихкод. Можно также выбрать скриншот из галереи.", "Camera access is needed to read the barcode. You can also pick a screenshot from the gallery."),
                         color = Color.White,
                         textAlign = TextAlign.Center,
                     )
-                    Button(onClick = { permission.launch(Manifest.permission.CAMERA) }) { Text("Разрешить камеру") }
+                    Button(onClick = { permission.launch(Manifest.permission.CAMERA) }) { Text(tr("Разрешить камеру", "Allow camera")) }
                     TextButton(onClick = { pickImage.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }) {
-                        Text("Выбрать из галереи", color = Color.White)
+                        Text(tr("Выбрать из галереи", "Pick from the gallery"), color = Color.White)
                     }
                 }
             }
@@ -312,7 +313,7 @@ private fun OtherCodeCard(code: DecodedCode, onSave: () -> Unit, onDismiss: () -
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
     ) {
         Column(Modifier.padding(16.dp)) {
-            Text("Найден код, но это не посадочный IATA", style = MaterialTheme.typography.titleSmall)
+            Text(tr("Найден код, но это не посадочный IATA", "Found a code, but it is not an IATA boarding pass"), style = MaterialTheme.typography.titleSmall)
             Spacer(Modifier.height(4.dp))
             Text(
                 code.raw,
@@ -323,8 +324,8 @@ private fun OtherCodeCard(code: DecodedCode, onSave: () -> Unit, onDismiss: () -
             )
             Spacer(Modifier.height(8.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                TextButton(onClick = onDismiss) { Text("Продолжить") }
-                TextButton(onClick = onSave) { Text("Сохранить как есть") }
+                TextButton(onClick = onDismiss) { Text(tr("Продолжить", "Keep scanning")) }
+                TextButton(onClick = onSave) { Text(tr("Сохранить как есть", "Save as is")) }
             }
         }
     }

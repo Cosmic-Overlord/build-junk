@@ -1,6 +1,7 @@
 package io.github.cosmicoverlord.boardingpass.core.model
 
 import io.github.cosmicoverlord.boardingpass.core.bcbp.Bcbp
+import io.github.cosmicoverlord.boardingpass.core.tr
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import java.time.LocalDate
@@ -50,6 +51,12 @@ data class BoardingPass(
     val status: FlightStatus? = null,
     val statusError: String? = null,
     val statusCheckedAt: Long? = null,
+    /** seatmaps.com aircraft page chosen for this pass when the model couldn't be matched. */
+    val seatMapAircraft: String? = null,
+    /** Cabin layout variant picked by the user when the seat fits several. */
+    val seatMapVariant: String? = null,
+    /** The user stopped the pre-departure frequent refresh for this flight. */
+    val rushMuted: Boolean = false,
 ) {
     val date: LocalDate? get() = flightDate?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
 
@@ -67,19 +74,39 @@ data class BoardingPass(
 }
 
 @Serializable
-enum class StatusKind(val label: String, val isFinal: Boolean = false) {
-    SCHEDULED("По расписанию"),
-    DELAYED("Задерживается"),
-    CHECK_IN("Регистрация"),
-    BOARDING("Посадка"),
-    GATE_CLOSED("Посадка окончена"),
-    DEPARTED("Вылетел"),
-    EN_ROUTE("В полёте"),
-    LANDED("Приземлился", isFinal = true),
-    ARRIVED("Прибыл", isFinal = true),
-    CANCELLED("Отменён", isFinal = true),
-    DIVERTED("Перенаправлен", isFinal = true),
-    UNKNOWN("Неизвестно"),
+enum class StatusKind(val isFinal: Boolean = false) {
+    SCHEDULED,
+    DELAYED,
+    CHECK_IN,
+    BOARDING,
+    GATE_CLOSED,
+    DEPARTED,
+    EN_ROUTE,
+    LANDED(isFinal = true),
+    ARRIVED(isFinal = true),
+    CANCELLED(isFinal = true),
+    DIVERTED(isFinal = true),
+    UNKNOWN,
+    ;
+
+    val label: String
+        get() = when (this) {
+            SCHEDULED -> tr("По расписанию", "Scheduled")
+            DELAYED -> tr("Задерживается", "Delayed")
+            CHECK_IN -> tr("Регистрация", "Check-in")
+            BOARDING -> tr("Посадка", "Boarding")
+            GATE_CLOSED -> tr("Посадка окончена", "Gate closed")
+            DEPARTED -> tr("Вылетел", "Departed")
+            EN_ROUTE -> tr("В полёте", "En route")
+            LANDED -> tr("Приземлился", "Landed")
+            ARRIVED -> tr("Прибыл", "Arrived")
+            CANCELLED -> tr("Отменён", "Cancelled")
+            DIVERTED -> tr("Перенаправлен", "Diverted")
+            UNKNOWN -> tr("Неизвестно", "Unknown")
+        }
+
+    /** The aircraft has left the gate (or never will): nothing left to wait for at the airport. */
+    val hasLeft: Boolean get() = this in setOf(DEPARTED, EN_ROUTE, LANDED, ARRIVED, CANCELLED, DIVERTED)
 }
 
 @Serializable
@@ -134,7 +161,7 @@ object PassFactory {
                 marketingCarrier = leg.marketingCarrier?.takeIf { it != leg.carrier },
                 frequentFlyer = listOfNotNull(leg.frequentFlyerAirline, leg.frequentFlyerNumber)
                     .joinToString(" ").ifBlank { null },
-                baggageAllowance = leg.baggageAllowance?.let(::formatBaggage),
+                baggageAllowance = leg.baggageAllowance?.trim()?.ifEmpty { null },
                 parsed = true,
             )
         }
@@ -147,29 +174,36 @@ object PassFactory {
         parsed = false,
     )
 
-    private fun passengerType(code: String?): String? = when (code) {
-        "0" -> "Взрослый"
-        "1" -> "Взрослый (м)"
-        "2" -> "Взрослый (ж)"
-        "3" -> "Ребёнок"
-        "4" -> "Младенец"
-        "6" -> "Взрослый с младенцем"
-        "7" -> "Несопровождаемый ребёнок"
-        else -> null
+    /** Stored as a code so the label follows the UI language. */
+    private fun passengerType(code: String?): String? = code?.takeIf { it in "0123467" && it.length == 1 }
+
+    fun passengerTypeLabel(code: String?): String? = when (code) {
+        "0" -> tr("Взрослый", "Adult")
+        "1" -> tr("Взрослый (м)", "Adult (male)")
+        "2" -> tr("Взрослый (ж)", "Adult (female)")
+        "3" -> tr("Ребёнок", "Child")
+        "4" -> tr("Младенец", "Infant")
+        "6" -> tr("Взрослый с младенцем", "Adult with infant")
+        "7" -> tr("Несопровождаемый ребёнок", "Unaccompanied minor")
+        // Older saves kept the Russian label itself.
+        else -> code
     }
 
-    /** "20K" -> "20 кг", "2PC" -> "2 места", "1PC" -> "1 место". */
+    /** "20K" -> "20 кг", "2PC" -> "2 места" / "2 pieces". */
     fun formatBaggage(raw: String): String {
         val t = raw.trim()
-        Regex("^0*(\\d+)\\s*K$").find(t)?.let { return "${it.groupValues[1]} кг" }
-        Regex("^0*(\\d+)\\s*L$").find(t)?.let { return "${it.groupValues[1]} фунтов" }
+        Regex("^0*(\\d+)\\s*K$").find(t)?.let { return "${it.groupValues[1]} " + tr("кг", "kg") }
+        Regex("^0*(\\d+)\\s*L$").find(t)?.let { return "${it.groupValues[1]} " + tr("фунтов", "lb") }
         Regex("^0*(\\d+)\\s*PC$").find(t)?.let {
             val n = it.groupValues[1].toInt()
-            return "$n " + when {
-                n % 10 == 1 && n % 100 != 11 -> "место"
-                n % 10 in 2..4 && n % 100 !in 12..14 -> "места"
-                else -> "мест"
-            }
+            return "$n " + tr(
+                when {
+                    n % 10 == 1 && n % 100 != 11 -> "место"
+                    n % 10 in 2..4 && n % 100 !in 12..14 -> "места"
+                    else -> "мест"
+                },
+                if (n == 1) "piece" else "pieces",
+            )
         }
         return t
     }
@@ -178,11 +212,14 @@ object PassFactory {
 object PassText {
     fun cabinClass(code: String): String? = when (code.uppercase()) {
         "" -> null
-        "F", "A", "P" -> "Первый"
-        "J", "C", "D", "I", "Z", "R" -> "Бизнес"
-        "W", "E" -> "Премиум-эконом"
-        else -> "Эконом"
+        "F", "A", "P" -> tr("Первый", "First")
+        "J", "C", "D", "I", "Z", "R" -> tr("Бизнес", "Business")
+        "W", "E" -> tr("Премиум-эконом", "Premium economy")
+        else -> tr("Эконом", "Economy")
     }
+
+    /** Baggage is stored raw ("20K") and formatted for display in the current language. */
+    fun baggage(raw: String?): String? = raw?.let { PassFactory.formatBaggage(it) }
 
     /** "IVANOV/IVAN MR" -> "IVANOV IVAN MR". */
     fun passenger(name: String): String = name.replace('/', ' ').replace(Regex("\\s+"), " ").trim()

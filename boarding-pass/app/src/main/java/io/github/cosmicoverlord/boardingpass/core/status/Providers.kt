@@ -4,6 +4,7 @@ import io.github.cosmicoverlord.boardingpass.core.data.AircraftTypes
 import io.github.cosmicoverlord.boardingpass.core.model.AppJson
 import io.github.cosmicoverlord.boardingpass.core.model.FlightStatus
 import io.github.cosmicoverlord.boardingpass.core.model.StatusKind
+import io.github.cosmicoverlord.boardingpass.core.tr
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonArray
@@ -13,7 +14,12 @@ import java.time.OffsetDateTime
 import java.time.ZoneId
 
 private fun notOnDate(q: FlightQuery, source: String) =
-    StatusException("$source пока не отдаёт рейс ${q.designator} на ${q.date} — статус появится ближе к вылету")
+    StatusException(
+        tr(
+            "$source пока не отдаёт рейс ${q.designator} на ${q.date} — статус появится ближе к вылету",
+            "$source has no ${q.designator} on ${q.date} yet — the status appears closer to departure",
+        ),
+    )
 
 // ================================================================ AeroDataBox
 
@@ -39,7 +45,7 @@ class AeroDataBoxProvider(private val apiKey: String, private val http: HttpClie
                 is JsonObject -> root.arr("items") ?: JsonArray(listOf(root))
                 else -> JsonArray(emptyList())
             }.mapNotNull { it as? JsonObject }
-            if (items.isEmpty()) throw StatusException("Рейс не найден у источника данных")
+            if (items.isEmpty()) throw StatusException(notFoundMessage())
 
             val f = items.firstOrNull { it.obj("departure").obj("airport").str("iata") == q.from }
                 ?: items.first()
@@ -114,7 +120,9 @@ class FlightAwareProvider(
         val start = maxOf(q.date.minusDays(1), now.minusDays(9))
         val end = minOf(q.date.plusDays(2), now.plusDays(2))
         if (!start.isBefore(end)) {
-            throw StatusException("FlightAware отдаёт статус не раньше чем за 2 дня до вылета")
+            throw StatusException(
+                tr("FlightAware отдаёт статус не раньше чем за 2 дня до вылета", "FlightAware only has flights from 2 days before departure"),
+            )
         }
         val url = "https://aeroapi.flightaware.com/aeroapi/flights/${enc(q.designator)}" +
             "?ident_type=designator&start=$start&end=$end"
@@ -126,7 +134,7 @@ class FlightAwareProvider(
     companion object {
         fun parse(body: String, q: FlightQuery, now: Long): FlightStatus {
             val flights = parseJson(body).arr("flights")?.mapNotNull { it as? JsonObject }.orEmpty()
-            if (flights.isEmpty()) throw StatusException("Рейс не найден у источника данных")
+            if (flights.isEmpty()) throw StatusException(notFoundMessage())
 
             fun depZone(f: JsonObject) = f.obj("origin").str("timezone").zone() ?: q.fromZone
             fun schedOut(f: JsonObject) =
@@ -199,18 +207,18 @@ class AviationStackProvider(private val apiKey: String, private val http: HttpCl
                 .getOrNull() ?: return null
             val err = root.obj("error") ?: return null
             return when (err.str("code")) {
-                "invalid_access_key", "missing_access_key", "inactive_user" -> "API-ключ не принят"
-                "usage_limit_reached" -> "Исчерпан месячный лимит запросов Aviationstack"
-                "rate_limit_reached" -> "Слишком много запросов, попробуйте позже"
-                "function_access_restricted" -> "Функция недоступна на вашем тарифе Aviationstack"
-                else -> err.str("message") ?: "Ошибка Aviationstack"
+                "invalid_access_key", "missing_access_key", "inactive_user" -> tr("API-ключ не принят", "API key rejected")
+                "usage_limit_reached" -> tr("Исчерпан месячный лимит запросов Aviationstack", "Aviationstack monthly limit reached")
+                "rate_limit_reached" -> tr("Слишком много запросов, попробуйте позже", "Too many requests, try again later")
+                "function_access_restricted" -> tr("Функция недоступна на вашем тарифе Aviationstack", "Not available on your Aviationstack plan")
+                else -> err.str("message") ?: tr("Ошибка Aviationstack", "Aviationstack error")
             }
         }
 
         fun parse(body: String, q: FlightQuery, now: Long): FlightStatus {
             parseError(body)?.let { throw StatusException(it) }
             val data = parseJson(body).arr("data")?.mapNotNull { it as? JsonObject }.orEmpty()
-            if (data.isEmpty()) throw StatusException("Рейс не найден у источника данных")
+            if (data.isEmpty()) throw StatusException(notFoundMessage())
 
             // The request can't be filtered by date on the free plan, so match it here and never
             // substitute another day's flight (its final status would stop tracking ours).

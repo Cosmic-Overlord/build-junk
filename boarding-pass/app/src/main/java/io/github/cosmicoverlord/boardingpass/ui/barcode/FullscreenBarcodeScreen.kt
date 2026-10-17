@@ -36,6 +36,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 import io.github.cosmicoverlord.boardingpass.core.model.BoardingPass
 import io.github.cosmicoverlord.boardingpass.core.model.PassText
 import io.github.cosmicoverlord.boardingpass.ui.components.findActivity
+import io.github.cosmicoverlord.boardingpass.core.tr
 
 /**
  * White full screen with the barcode as big as possible, max brightness and the screen kept on.
@@ -109,7 +110,7 @@ fun FullscreenBarcodeScreen(pass: BoardingPass, edgeMarginMm: Int, onClose: () -
                     Text(
                         listOfNotNull(
                             PassText.passenger(pass.passengerName).ifBlank { null },
-                            pass.seat.ifBlank { null }?.let { "место $it" },
+                            pass.seat.ifBlank { null }?.let { tr("место $it", "seat $it") },
                         ).joinToString("  ·  "),
                         color = Color.DarkGray,
                         fontSize = 14.sp,
@@ -117,7 +118,7 @@ fun FullscreenBarcodeScreen(pass: BoardingPass, edgeMarginMm: Int, onClose: () -
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
-                IconButton(onClick = onClose) { Icon(Icons.Default.Close, contentDescription = "Закрыть", tint = Color.Black) }
+                IconButton(onClick = onClose) { Icon(Icons.Default.Close, contentDescription = tr("Закрыть", "Close"), tint = Color.Black) }
             }
         }
     }

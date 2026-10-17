@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Посадочные</string>
-    <string name="import_pass">Добавить в «Посадочные»</string>
+    <string name="app_name">Boarding Passes</string>
+    <string name="import_pass">Add to Boarding Passes</string>
 </resources>

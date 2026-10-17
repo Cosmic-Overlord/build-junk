@@ -32,6 +32,8 @@ import io.github.cosmicoverlord.boardingpass.core.data.Airport
 import io.github.cosmicoverlord.boardingpass.core.data.Geo
 import io.github.cosmicoverlord.boardingpass.core.model.BoardingPass
 import io.github.cosmicoverlord.boardingpass.ui.theme.HeroGradient
+import io.github.cosmicoverlord.boardingpass.core.I18n
+import io.github.cosmicoverlord.boardingpass.core.tr
 
 @Composable
 private fun AirportBlock(
@@ -52,7 +54,7 @@ private fun AirportBlock(
             color = textColor,
         )
         Text(
-            airport?.displayCity ?: "Неизвестный аэропорт",
+            airport?.displayCity ?: tr("Неизвестный аэропорт", "Unknown airport"),
             style = if (big) MaterialTheme.typography.titleMedium else MaterialTheme.typography.bodyMedium,
             color = textColor,
             maxLines = 1,
@@ -61,7 +63,7 @@ private fun AirportBlock(
         )
         if (airport != null) {
             Text(
-                "${Geo.flag(airport.country)} ${Geo.countryName(airport.country)}".trim(),
+                "${Geo.flag(airport.country)} ${Geo.countryName(airport.country, I18n.locale)}".trim(),
                 style = MaterialTheme.typography.bodySmall,
                 color = textColor.copy(alpha = 0.8f),
                 maxLines = 1,
@@ -105,7 +107,7 @@ fun RouteRow(
             }
             if (big && from != null && to != null) {
                 Text(
-                    "${Geo.distanceKm(from, to)} км",
+                    "${Geo.distanceKm(from, to)} " + tr("км", "km"),
                     style = MaterialTheme.typography.labelSmall,
                     color = textColor.copy(alpha = 0.8f),
                 )

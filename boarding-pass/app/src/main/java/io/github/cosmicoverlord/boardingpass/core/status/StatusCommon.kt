@@ -1,6 +1,7 @@
 package io.github.cosmicoverlord.boardingpass.core.status
 
 import io.github.cosmicoverlord.boardingpass.core.model.AppJson
+import io.github.cosmicoverlord.boardingpass.core.tr
 import io.github.cosmicoverlord.boardingpass.core.model.FlightStatus
 import io.github.cosmicoverlord.boardingpass.core.model.StatusKind
 import io.github.cosmicoverlord.boardingpass.core.model.toOdt
@@ -22,30 +23,46 @@ import java.time.OffsetDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
-enum class ProviderType(val title: String, val description: String, val signupUrl: String?) {
-    NONE(
-        "Не отслеживать",
-        "Статус, терминал и выход не запрашиваются. Данные берутся только из посадочного талона.",
-        null,
-    ),
-    AERODATABOX(
-        "AeroDataBox (RapidAPI)",
-        "Статус, терминал, выход, стойки регистрации, лента багажа, модель и бортовой номер самолёта. " +
-            "Есть бесплатный тариф Basic на RapidAPI. Ключ — X-RapidAPI-Key.",
-        "https://rapidapi.com/aedbx-aedbx/api/aerodatabox",
-    ),
-    FLIGHTAWARE(
-        "FlightAware AeroAPI",
-        "Точные статусы, терминалы и выходы, тип и бортовой номер самолёта. " +
-            "Тариф Personal с бесплатным лимитом. Данные — не раньше чем за 2 дня до вылета.",
-        "https://www.flightaware.com/aeroapi/portal/",
-    ),
-    AVIATIONSTACK(
-        "Aviationstack",
-        "Статус, терминал, выход, задержка, лента багажа. Бесплатно 100 запросов в месяц, " +
-            "но бесплатный тариф работает только по HTTP — ключ передаётся без шифрования.",
-        "https://aviationstack.com/signup/free",
-    ),
+enum class ProviderType(val signupUrl: String?) {
+    NONE(null),
+    AERODATABOX("https://rapidapi.com/aedbx-aedbx/api/aerodatabox"),
+    FLIGHTAWARE("https://www.flightaware.com/aeroapi/portal/"),
+    AVIATIONSTACK("https://aviationstack.com/signup/free"),
+    ;
+
+    val title: String
+        get() = when (this) {
+            NONE -> tr("Не отслеживать", "Don't track")
+            AERODATABOX -> "AeroDataBox (RapidAPI)"
+            FLIGHTAWARE -> "FlightAware AeroAPI"
+            AVIATIONSTACK -> "Aviationstack"
+        }
+
+    val description: String
+        get() = when (this) {
+            NONE -> tr(
+                "Статус, терминал и выход не запрашиваются. Данные берутся только из посадочного талона.",
+                "No status, terminal or gate lookups. Only the boarding pass data is shown.",
+            )
+            AERODATABOX -> tr(
+                "Статус, терминал, выход, стойки регистрации, лента багажа, модель и бортовой номер самолёта. " +
+                    "Есть бесплатный тариф Basic на RapidAPI. Ключ — X-RapidAPI-Key.",
+                "Status, terminal, gate, check-in desks, baggage belt, aircraft model and registration. " +
+                    "Free Basic plan on RapidAPI. The key is your X-RapidAPI-Key.",
+            )
+            FLIGHTAWARE -> tr(
+                "Точные статусы, терминалы и выходы, тип и бортовой номер самолёта. " +
+                    "Тариф Personal с бесплатным лимитом. Данные — не раньше чем за 2 дня до вылета.",
+                "Accurate status, terminals and gates, aircraft type and registration. " +
+                    "Personal plan with a free allowance. Data is available from 2 days before departure.",
+            )
+            AVIATIONSTACK -> tr(
+                "Статус, терминал, выход, задержка, лента багажа. Бесплатно 100 запросов в месяц, " +
+                    "но бесплатный тариф работает только по HTTP — ключ передаётся без шифрования.",
+                "Status, terminal, gate, delay, baggage belt. 100 free requests a month, " +
+                    "but the free plan only works over HTTP, so the key is sent unencrypted.",
+            )
+        }
 }
 
 data class FlightQuery(
@@ -70,7 +87,7 @@ interface FlightStatusProvider {
 fun createProvider(type: ProviderType, apiKey: String, http: HttpClient = UrlConnectionHttp): FlightStatusProvider? {
     val key = apiKey.trim()
     if (type == ProviderType.NONE) return null
-    if (key.isEmpty()) throw StatusException("Не указан API-ключ для ${type.title} — откройте настройки")
+    if (key.isEmpty()) throw StatusException(tr("Не указан API-ключ для ${type.title} — откройте настройки", "No API key for ${type.title} — open Settings"))
     return when (type) {
         ProviderType.AERODATABOX -> AeroDataBoxProvider(key, http)
         ProviderType.FLIGHTAWARE -> FlightAwareProvider(key, http)
@@ -101,7 +118,7 @@ object UrlConnectionHttp : HttpClient {
             val body = stream?.use { it.readBytes().toString(Charsets.UTF_8) }.orEmpty()
             return HttpResponse(code, body)
         } catch (e: IOException) {
-            throw StatusException("Нет соединения с сервером: ${e.message ?: e.javaClass.simpleName}")
+            throw StatusException(tr("Нет соединения с сервером", "Can't reach the server") + ": ${e.message ?: e.javaClass.simpleName}")
         } finally {
             c.disconnect()
         }
@@ -112,20 +129,22 @@ internal fun enc(s: String): String = URLEncoder.encode(s, "UTF-8")
 
 internal fun checkHttp(resp: HttpResponse) {
     if (resp.code in 200..299) {
-        if (resp.code == 204 || resp.body.isBlank()) throw StatusException("Рейс не найден у источника данных")
+        if (resp.code == 204 || resp.body.isBlank()) throw StatusException(notFoundMessage())
         return
     }
     val msg = serverMessage(resp.body)?.let { ": $it" }.orEmpty()
     throw StatusException(
         when (resp.code) {
-            404 -> "Рейс не найден у источника данных"
-            401, 403 -> "API-ключ не принят (HTTP ${resp.code})$msg"
-            429 -> "Превышен лимит запросов API (HTTP 429)$msg"
-            400 -> "Источник отклонил запрос (HTTP 400)$msg"
-            else -> "Ошибка сервера (HTTP ${resp.code})$msg"
+            404 -> notFoundMessage()
+            401, 403 -> tr("API-ключ не принят", "API key rejected") + " (HTTP ${resp.code})$msg"
+            429 -> tr("Превышен лимит запросов API", "API request limit exceeded") + " (HTTP 429)$msg"
+            400 -> tr("Источник отклонил запрос", "The provider rejected the request") + " (HTTP 400)$msg"
+            else -> tr("Ошибка сервера", "Server error") + " (HTTP ${resp.code})$msg"
         },
     )
 }
+
+internal fun notFoundMessage() = tr("Рейс не найден у источника данных", "The provider doesn't know this flight")
 
 private fun serverMessage(body: String): String? {
     val root = runCatching { AppJson.parseToJsonElement(body) }.getOrNull() ?: return body.take(120).ifBlank { null }
@@ -136,7 +155,7 @@ internal fun parseJson(body: String): JsonElement =
     try {
         AppJson.parseToJsonElement(body)
     } catch (e: Exception) {
-        throw StatusException("Некорректный ответ сервера")
+        throw StatusException(tr("Некорректный ответ сервера", "Malformed server response"))
     }
 
 // ---------------------------------------------------------------- JSON helpers
@@ -195,12 +214,12 @@ object StatusDiff {
     fun changes(old: FlightStatus?, new: FlightStatus): List<String> {
         if (old == null) return emptyList()
         val out = mutableListOf<String>()
-        if (new.kind != old.kind && new.kind != StatusKind.UNKNOWN) out += "Статус: ${new.kind.label}"
+        if (new.kind != old.kind && new.kind != StatusKind.UNKNOWN) out += tr("Статус", "Status") + ": ${new.kind.label}"
         if (new.depTerminal != null && new.depTerminal != old.depTerminal) {
-            out += "Терминал: " + (old.depTerminal?.let { "$it → " } ?: "") + new.depTerminal
+            out += tr("Терминал", "Terminal") + ": " + (old.depTerminal?.let { "$it → " } ?: "") + new.depTerminal
         }
         if (new.depGate != null && new.depGate != old.depGate) {
-            out += "Выход: " + (old.depGate?.let { "$it → " } ?: "") + new.depGate
+            out += tr("Выход", "Gate") + ": " + (old.depGate?.let { "$it → " } ?: "") + new.depGate
         }
         // A new estimate is compared with the previous best guess; a missing estimate is not a change.
         val newEst = new.depEstimated.toOdt()
@@ -210,9 +229,9 @@ object StatusDiff {
             old.depScheduled.toOdt() to new.depScheduled.toOdt()
         }
         if (before != null && after != null && kotlin.math.abs(Duration.between(before, after).toMinutes()) >= 5) {
-            out += "Вылет: ${before.format(hm)} → ${after.format(hm)}"
+            out += tr("Вылет", "Departure") + ": ${before.format(hm)} → ${after.format(hm)}"
         }
-        if (new.baggageBelt != null && new.baggageBelt != old.baggageBelt) out += "Лента выдачи багажа: ${new.baggageBelt}"
+        if (new.baggageBelt != null && new.baggageBelt != old.baggageBelt) out += tr("Лента выдачи багажа", "Baggage belt") + ": ${new.baggageBelt}"
         return out
     }
 }

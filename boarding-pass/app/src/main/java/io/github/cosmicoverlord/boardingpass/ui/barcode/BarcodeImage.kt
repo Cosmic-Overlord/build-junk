@@ -25,6 +25,7 @@ import io.github.cosmicoverlord.boardingpass.core.model.CodeFormat
 import kotlin.math.floor
 import kotlin.math.min
 import kotlin.math.roundToInt
+import io.github.cosmicoverlord.boardingpass.core.tr
 
 object BarcodeRenderer {
     /** Re-encodes the stored payload at one pixel per module; scaling happens at draw time. */
@@ -78,7 +79,7 @@ fun BarcodeView(
     }
     if (images == null) {
         Box(modifier, contentAlignment = Alignment.Center) {
-            Text("Не удалось построить код", color = Color.Black, style = MaterialTheme.typography.bodyMedium)
+            Text(tr("Не удалось построить код", "Couldn't draw the code"), color = Color.Black, style = MaterialTheme.typography.bodyMedium)
         }
         return
     }

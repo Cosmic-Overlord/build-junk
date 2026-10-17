@@ -11,6 +11,7 @@ import io.github.cosmicoverlord.boardingpass.data.PassRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import io.github.cosmicoverlord.boardingpass.core.tr
 
 sealed interface ImportOutcome {
     /** [ids] of the passes that were added or already existed, in barcode order. */
@@ -30,21 +31,21 @@ class PassImporter(
     suspend fun importUri(uri: Uri): ImportOutcome = try {
         importCodes(decodeUri(uri))
     } catch (e: ImportException) {
-        ImportOutcome.Failed(e.message ?: "Не удалось прочитать файл")
+        ImportOutcome.Failed(e.message ?: tr("Не удалось прочитать файл", "Couldn't read the file"))
     } catch (e: CancellationException) {
         throw e
     } catch (e: SecurityException) {
-        ImportOutcome.Failed("Нет доступа к файлу")
+        ImportOutcome.Failed(tr("Нет доступа к файлу", "No access to the file"))
     } catch (e: OutOfMemoryError) {
-        ImportOutcome.Failed("Файл слишком большой")
+        ImportOutcome.Failed(tr("Файл слишком большой", "The file is too large"))
     } catch (e: Exception) {
         // FileNotFoundException for expired grants, IOExceptions from PdfRenderer, etc.
-        ImportOutcome.Failed("Не удалось прочитать файл")
+        ImportOutcome.Failed(tr("Не удалось прочитать файл", "Couldn't read the file"))
     }
 
     suspend fun importCodes(codes: List<DecodedCode>): ImportOutcome {
         if (codes.isEmpty()) {
-            return ImportOutcome.Failed("Штрихкод не найден. Попробуйте скриншот покрупнее или сканирование камерой")
+            return ImportOutcome.Failed(tr("Штрихкод не найден. Попробуйте скриншот покрупнее или сканирование камерой", "No barcode found. Try a larger screenshot or the camera scanner"))
         }
         val parsed = codes.mapNotNull { code -> BcbpParser.parseOrNull(code.raw)?.let { code to it } }
         if (parsed.isEmpty()) return ImportOutcome.NotBoardingPass(codes.first())
@@ -85,7 +86,7 @@ class PassImporter(
                 val n = input.read(buf)
                 if (n > 0) buf.copyOf(n) else ByteArray(0)
             }
-        } ?: throw ImportException("Не удалось открыть файл")
+        } ?: throw ImportException(tr("Не удалось открыть файл", "Couldn't open the file"))
 
         val isPdf = head.size >= 4 && String(head, 0, 4, Charsets.ISO_8859_1) == "%PDF"
         return when {
@@ -93,11 +94,11 @@ class PassImporter(
             PkPass.isZip(head) || mime.contains("pkpass") -> {
                 val bytes = withContext(Dispatchers.IO) {
                     resolver.openInputStream(uri)?.use { it.readBytes() }
-                } ?: throw ImportException("Не удалось открыть файл")
+                } ?: throw ImportException(tr("Не удалось открыть файл", "Couldn't open the file"))
                 try {
                     PkPass.extract(bytes)
                 } catch (e: Exception) {
-                    throw ImportException("Не удалось прочитать .pkpass")
+                    throw ImportException(tr("Не удалось прочитать .pkpass", "Couldn't read the .pkpass"))
                 }
             }
             else -> decoder.decodeImage(uri)

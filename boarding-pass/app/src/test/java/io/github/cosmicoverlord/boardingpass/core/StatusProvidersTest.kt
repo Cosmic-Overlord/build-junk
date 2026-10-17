@@ -15,6 +15,7 @@ import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
+import org.junit.Before
 import org.junit.Test
 import java.io.ByteArrayOutputStream
 import java.time.LocalDate
@@ -23,6 +24,11 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
 class StatusProvidersTest {
+    @Before
+    fun russian() {
+        I18n.lang = Lang.RU
+    }
+
     private val q = FlightQuery(
         carrier = "SU", number = "12", date = LocalDate.of(2026, 10, 17), from = "SVO", to = "LED",
         fromZone = ZoneId.of("Europe/Moscow"), toZone = ZoneId.of("Europe/Moscow"),

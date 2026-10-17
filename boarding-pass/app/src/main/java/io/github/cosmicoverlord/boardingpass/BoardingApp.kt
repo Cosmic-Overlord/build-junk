@@ -2,26 +2,50 @@ package io.github.cosmicoverlord.boardingpass
 
 import android.app.Application
 import android.content.Context
+import android.content.res.Configuration
+import io.github.cosmicoverlord.boardingpass.core.I18n
 import io.github.cosmicoverlord.boardingpass.core.data.AirlineDb
 import io.github.cosmicoverlord.boardingpass.core.data.AirportDb
+import io.github.cosmicoverlord.boardingpass.data.AppLanguage
 import io.github.cosmicoverlord.boardingpass.data.PassRepository
+import io.github.cosmicoverlord.boardingpass.data.SeatMapRepository
 import io.github.cosmicoverlord.boardingpass.data.SettingsStore
 import io.github.cosmicoverlord.boardingpass.data.StatusUpdater
 import io.github.cosmicoverlord.boardingpass.importer.BarcodeDecoder
 import io.github.cosmicoverlord.boardingpass.importer.PassImporter
 import io.github.cosmicoverlord.boardingpass.tracking.Notifications
+import io.github.cosmicoverlord.boardingpass.tracking.RushScheduler
 import io.github.cosmicoverlord.boardingpass.tracking.TrackingScheduler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import java.util.Locale
 
 class BoardingApp : Application() {
     override fun onCreate() {
         super.onCreate()
         AppGraph.init(this)
-        Notifications.createChannel(this)
-        TrackingScheduler.apply(this, AppGraph.settings.state.value)
+        val settings = AppGraph.settings
+        I18n.lang = settings.state.value.language.resolve()
+        Notifications.createChannels(this)
+        TrackingScheduler.apply(this, settings.state.value)
+        AppGraph.scope.launch {
+            // Language follows the setting; channel names are re-created in the new language.
+            settings.state.map { it.language }.distinctUntilChanged().collect {
+                I18n.lang = it.resolve()
+                Notifications.createChannels(this@BoardingApp)
+            }
+        }
+        AppGraph.scope.launch {
+            // Any change to passes, statuses or settings can move the next pre-departure window.
+            combine(AppGraph.repository.passes, settings.state) { _, _ -> }.collect {
+                RushScheduler.reschedule(this@BoardingApp)
+            }
+        }
         // Warm up the reference data off the main thread.
         AppGraph.scope.launch(Dispatchers.Default) {
             AppGraph.airports
@@ -47,4 +71,17 @@ object AppGraph {
     val decoder by lazy { BarcodeDecoder(context) }
     val importer by lazy { PassImporter(context, repository, decoder) }
     val statusUpdater by lazy { StatusUpdater(repository, settings) { airports } }
+    val seatMaps by lazy { SeatMapRepository(context) }
+}
+
+/** Applies the in-app language to an activity's resources (date pickers, system strings). */
+object LocaleContext {
+    fun wrap(base: Context): Context {
+        val lang = SettingsStore.peekLanguage(base)
+        if (lang == AppLanguage.SYSTEM) return base
+        val locale = Locale.forLanguageTag(lang.tag)
+        val config = Configuration(base.resources.configuration)
+        config.setLocale(locale)
+        return base.createConfigurationContext(config)
+    }
 }

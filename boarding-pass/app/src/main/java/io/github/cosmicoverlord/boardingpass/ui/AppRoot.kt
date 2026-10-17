@@ -1,5 +1,10 @@
 package io.github.cosmicoverlord.boardingpass.ui
 
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -30,11 +35,13 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import io.github.cosmicoverlord.boardingpass.core.model.DecodedCode
+import io.github.cosmicoverlord.boardingpass.core.tr
 import io.github.cosmicoverlord.boardingpass.ui.barcode.FullscreenBarcodeScreen
 import io.github.cosmicoverlord.boardingpass.ui.detail.PassDetailScreen
 import io.github.cosmicoverlord.boardingpass.ui.edit.EditPassScreen
 import io.github.cosmicoverlord.boardingpass.ui.list.PassListScreen
 import io.github.cosmicoverlord.boardingpass.ui.scan.ScannerScreen
+import io.github.cosmicoverlord.boardingpass.ui.seatmap.SeatMapScreen
 import io.github.cosmicoverlord.boardingpass.ui.settings.SettingsScreen
 import kotlinx.coroutines.launch
 
@@ -45,9 +52,11 @@ private object Routes {
     const val PASS = "pass/{id}"
     const val CODE = "code/{id}"
     const val EDIT = "edit/{id}"
+    const val SEAT_MAP = "seatmap/{id}"
     fun pass(id: String) = "pass/$id"
     fun code(id: String) = "code/$id"
     fun edit(id: String) = "edit/$id"
+    fun seatMap(id: String) = "seatmap/$id"
 }
 
 @Composable
@@ -56,6 +65,8 @@ fun AppRoot(vm: AppViewModel) {
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val importing by vm.importing.collectAsStateWithLifecycle()
+    val appSettings by vm.settings.collectAsStateWithLifecycle()
+    val animate = appSettings.animations
     var askUnparsed by remember { mutableStateOf<DecodedCode?>(null) }
 
     LaunchedEffect(Unit) {
@@ -72,7 +83,14 @@ fun AppRoot(vm: AppViewModel) {
         }
     }
 
-    NavHost(navController = nav, startDestination = Routes.LIST) {
+    NavHost(
+        navController = nav,
+        startDestination = Routes.LIST,
+        enterTransition = { if (animate) fadeIn(tween(220)) else EnterTransition.None },
+        exitTransition = { if (animate) fadeOut(tween(220)) else ExitTransition.None },
+        popEnterTransition = { if (animate) fadeIn(tween(220)) else EnterTransition.None },
+        popExitTransition = { if (animate) fadeOut(tween(220)) else ExitTransition.None },
+    ) {
         composable(Routes.LIST) {
             PassListScreen(
                 vm = vm,
@@ -101,7 +119,11 @@ fun AppRoot(vm: AppViewModel) {
                 onShowCode = { nav.navigate(Routes.code(id)) },
                 onEdit = { nav.navigate(Routes.edit(id)) },
                 onSettings = { nav.navigate(Routes.SETTINGS) },
+                onSeatMap = { nav.navigate(Routes.seatMap(id)) },
             )
+        }
+        composable(Routes.SEAT_MAP) { entry ->
+            SeatMapScreen(vm = vm, passId = entry.arguments?.getString("id").orEmpty(), onBack = { nav.popBackStack() })
         }
         composable(Routes.CODE) { entry ->
             val id = entry.arguments?.getString("id").orEmpty()
@@ -142,7 +164,7 @@ fun AppRoot(vm: AppViewModel) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 CircularProgressIndicator()
                 Spacer(Modifier.height(12.dp))
-                Text("Ищу штрихкод…", color = Color.White, style = MaterialTheme.typography.bodyLarge)
+                Text(tr("Ищу штрихкод…", "Looking for a barcode…"), color = Color.White, style = MaterialTheme.typography.bodyLarge)
             }
         }
     }
@@ -150,12 +172,12 @@ fun AppRoot(vm: AppViewModel) {
     askUnparsed?.let { code ->
         AlertDialog(
             onDismissRequest = { askUnparsed = null },
-            title = { Text("Это не посадочный IATA") },
+            title = { Text(tr("Это не посадочный IATA", "Not an IATA boarding pass")) },
             text = {
                 Column {
                     Text(
-                        "Код прочитан, но в нём нет стандартных данных посадочного талона. " +
-                            "Можно сохранить его как есть (он будет показываться на весь экран) и заполнить рейс вручную.",
+                        tr("Код прочитан, но в нём нет стандартных данных посадочного талона. ", "The code was read, but it has no standard boarding pass data. ") +
+                            tr("Можно сохранить его как есть (он будет показываться на весь экран) и заполнить рейс вручную.", "You can save it as is (it will be shown full screen) and fill in the flight by hand."),
                     )
                     Spacer(Modifier.height(8.dp))
                     Text(code.raw, style = MaterialTheme.typography.bodySmall, maxLines = 3, overflow = TextOverflow.Ellipsis)
@@ -165,9 +187,9 @@ fun AppRoot(vm: AppViewModel) {
                 TextButton(onClick = {
                     askUnparsed = null
                     vm.saveUnparsed(code)
-                }) { Text("Сохранить") }
+                }) { Text(tr("Сохранить", "Save")) }
             },
-            dismissButton = { TextButton(onClick = { askUnparsed = null }) { Text("Отмена") } },
+            dismissButton = { TextButton(onClick = { askUnparsed = null }) { Text(tr("Отмена", "Cancel")) } },
         )
     }
 }

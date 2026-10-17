@@ -70,6 +70,7 @@ import io.github.cosmicoverlord.boardingpass.ui.components.Fmt
 import io.github.cosmicoverlord.boardingpass.ui.components.RouteRow
 import io.github.cosmicoverlord.boardingpass.ui.components.StatusChip
 import java.time.LocalDate
+import io.github.cosmicoverlord.boardingpass.core.tr
 
 /** Mime types offered by the "file" picker: PDFs, pictures and Apple Wallet passes. */
 val IMPORT_MIME_TYPES = arrayOf(
@@ -117,9 +118,9 @@ fun PassListScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Посадочные талоны") },
+                title = { Text(tr("Посадочные талоны", "Boarding passes")) },
                 actions = {
-                    IconButton(onClick = onSettings) { Icon(Icons.Default.Settings, contentDescription = "Настройки") }
+                    IconButton(onClick = onSettings) { Icon(Icons.Default.Settings, contentDescription = tr("Настройки", "Settings")) }
                 },
             )
         },
@@ -127,7 +128,7 @@ fun PassListScreen(
             ExtendedFloatingActionButton(
                 onClick = { showAdd = true },
                 icon = { Icon(Icons.Default.Add, contentDescription = null) },
-                text = { Text("Добавить") },
+                text = { Text(tr("Добавить", "Add")) },
             )
         },
         snackbarHost = { SnackbarHost(snackbar) },
@@ -146,13 +147,13 @@ fun PassListScreen(
                     modifier = Modifier.fillMaxSize(),
                 ) {
                     if (upcoming.isNotEmpty()) {
-                        item { SectionTitle("Предстоящие") }
+                        item { SectionTitle(tr("Предстоящие", "Upcoming")) }
                         items(upcoming, key = { it.id }) { p ->
                             PassCard(vm, p, onClick = { onOpen(p.id) }, onShowCode = { onShowCode(p.id) })
                         }
                     }
                     if (past.isNotEmpty()) {
-                        item { SectionTitle("Прошедшие") }
+                        item { SectionTitle(tr("Прошедшие", "Past")) }
                         items(past, key = { it.id }) { p ->
                             PassCard(vm, p, onClick = { onOpen(p.id) }, onShowCode = { onShowCode(p.id) }, dimmed = true)
                         }
@@ -160,7 +161,7 @@ fun PassListScreen(
                     if (!settings.trackingEnabled) {
                         item {
                             Text(
-                                "Статус рейса, терминал и выход появятся после выбора источника данных в настройках.",
+                                tr("Статус рейса, терминал и выход появятся после выбора источника данных в настройках.", "Flight status, terminal and gate appear once you choose a data source in Settings."),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.fillMaxWidth().clickable(onClick = onSettings).padding(8.dp),
@@ -178,19 +179,19 @@ fun PassListScreen(
         ModalBottomSheet(onDismissRequest = { showAdd = false }, sheetState = sheetState) {
             Column(Modifier.navigationBarsPadding().padding(bottom = 16.dp)) {
                 Text(
-                    "Добавить посадочный",
+                    tr("Добавить посадочный", "Add a boarding pass"),
                     style = MaterialTheme.typography.titleLarge,
                     modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
                 )
-                AddOption(Icons.Default.QrCodeScanner, "Сканировать камерой", "Штрихкод на бумаге или экране другого телефона") {
+                AddOption(Icons.Default.QrCodeScanner, tr("Сканировать камерой", "Scan with the camera"), tr("Штрихкод на бумаге или экране другого телефона", "A barcode on paper or on another phone")) {
                     showAdd = false
                     onScan()
                 }
-                AddOption(Icons.Default.PhotoLibrary, "Из фото или скриншота", "Картинка из галереи") {
+                AddOption(Icons.Default.PhotoLibrary, tr("Из фото или скриншота", "From a photo or screenshot"), tr("Картинка из галереи", "A picture from the gallery")) {
                     showAdd = false
                     pickImage.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
                 }
-                AddOption(Icons.Default.AttachFile, "Из файла", "PDF, изображение или Apple Wallet (.pkpass)") {
+                AddOption(Icons.Default.AttachFile, tr("Из файла", "From a file"), tr("PDF, изображение или Apple Wallet (.pkpass)", "PDF, image or Apple Wallet (.pkpass)")) {
                     showAdd = false
                     pickFile.launch(IMPORT_MIME_TYPES)
                 }
@@ -244,7 +245,7 @@ private fun PassCard(
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text(pass.flightLabel.ifBlank { "Рейс не указан" }, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text(pass.flightLabel.ifBlank { tr("Рейс не указан", "No flight number") }, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     if (airline != null) {
                         Text(
                             airline,
@@ -257,7 +258,7 @@ private fun PassCard(
                 }
                 if (st != null) StatusChip(st.kind)
                 FilledTonalIconButton(onClick = onShowCode, modifier = Modifier.padding(start = 8.dp)) {
-                    Icon(Icons.Default.QrCode, contentDescription = "Показать код")
+                    Icon(Icons.Default.QrCode, contentDescription = tr("Показать код", "Show code"))
                 }
             }
             RouteRow(
@@ -272,9 +273,9 @@ private fun PassCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.weight(1f),
                 )
-                Mini("Место", pass.seat)
-                Mini("Терм.", st?.depTerminal)
-                Mini("Выход", st?.depGate)
+                Mini(tr("Место", "Seat"), pass.seat)
+                Mini(tr("Терм.", "Term."), st?.depTerminal)
+                Mini(tr("Выход", "Gate"), st?.depGate)
             }
             if (pass.passengerName.isNotBlank()) {
                 Text(
@@ -308,11 +309,11 @@ private fun EmptyState(onScan: () -> Unit, onFile: () -> Unit) {
                 tint = MaterialTheme.colorScheme.primary,
             )
             Spacer(Modifier.height(16.dp))
-            Text("Пока нет посадочных", style = MaterialTheme.typography.titleLarge)
+            Text(tr("Пока нет посадочных", "No boarding passes yet"), style = MaterialTheme.typography.titleLarge)
             Spacer(Modifier.height(8.dp))
             Text(
-                "Отсканируйте штрихкод посадочного талона камерой или загрузите PDF / скриншот. " +
-                    "Можно также «Поделиться» файлом из почты или приложения авиакомпании.",
+                tr("Отсканируйте штрихкод посадочного талона камерой или загрузите PDF / скриншот. ", "Scan the boarding pass barcode with the camera or load a PDF / screenshot. ") +
+                    tr("Можно также «Поделиться» файлом из почты или приложения авиакомпании.", "You can also \"Share\" a file from email or the airline app."),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
@@ -321,13 +322,13 @@ private fun EmptyState(onScan: () -> Unit, onFile: () -> Unit) {
             Button(onClick = onScan) {
                 Icon(Icons.Default.QrCodeScanner, contentDescription = null)
                 Spacer(Modifier.size(8.dp))
-                Text("Сканировать")
+                Text(tr("Сканировать", "Scan"))
             }
             Spacer(Modifier.height(8.dp))
             OutlinedButton(onClick = onFile) {
                 Icon(Icons.Default.AttachFile, contentDescription = null)
                 Spacer(Modifier.size(8.dp))
-                Text("PDF или картинка")
+                Text(tr("PDF или картинка", "PDF or picture"))
             }
         }
     }

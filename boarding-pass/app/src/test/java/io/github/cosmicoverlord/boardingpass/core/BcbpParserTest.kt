@@ -3,15 +3,22 @@ package io.github.cosmicoverlord.boardingpass.core
 import io.github.cosmicoverlord.boardingpass.core.bcbp.BcbpParser
 import io.github.cosmicoverlord.boardingpass.core.model.CodeFormat
 import io.github.cosmicoverlord.boardingpass.core.model.PassFactory
+import io.github.cosmicoverlord.boardingpass.core.model.PassText
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
 import java.time.LocalDate
 
 class BcbpParserTest {
     private val today = LocalDate.of(2026, 10, 17)
+
+    @Before
+    fun russian() {
+        I18n.lang = Lang.RU
+    }
 
     // Two-leg example from IATA Resolution 792 (BCBP implementation guide).
     private val iataSample =
@@ -82,9 +89,13 @@ class BcbpParserTest {
         assertEquals(2, passes.size)
         assertEquals("2026-11-22", passes[0].flightDate)
         assertEquals("AC 834", passes[0].flightLabel)
-        assertEquals("20 кг", passes[0].baggageAllowance)
-        assertEquals("2 места", passes[1].baggageAllowance)
-        assertEquals("Взрослый (м)", passes[0].passengerType)
+        assertEquals("20K", passes[0].baggageAllowance)
+        assertEquals("20 кг", PassText.baggage(passes[0].baggageAllowance))
+        assertEquals("2 места", PassText.baggage(passes[1].baggageAllowance))
+        assertEquals("Взрослый (м)", PassFactory.passengerTypeLabel(passes[0].passengerType))
+        I18n.lang = Lang.EN
+        assertEquals("2 pieces", PassText.baggage(passes[1].baggageAllowance))
+        assertEquals("Adult (male)", PassFactory.passengerTypeLabel(passes[0].passengerType))
         assertEquals(1, passes[1].legIndex)
         assertEquals(2, passes[1].legCount)
     }
@@ -123,7 +134,7 @@ class BcbpParserTest {
         assertEquals("AIRLINE", leg.airlineData)
         assertEquals(LocalDate.of(2026, 10, 17), leg.flightDate)
         val pass = PassFactory.fromBcbp(p, CodeFormat.AZTEC).single()
-        assertEquals("1 место", pass.baggageAllowance)
+        assertEquals("1 место", PassText.baggage(pass.baggageAllowance))
         assertNull(pass.marketingCarrier)
         assertEquals("SU 1234567890", pass.frequentFlyer)
     }
