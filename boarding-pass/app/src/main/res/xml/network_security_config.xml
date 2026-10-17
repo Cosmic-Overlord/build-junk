@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- Aviationstack's free plan is only served over plain HTTP. -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">api.aviationstack.com</domain>
+    </domain-config>
+</network-security-config>

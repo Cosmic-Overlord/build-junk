@@ -1,0 +1,94 @@
+name: Boarding Pass APK
+
+on:
+  push:
+    paths:
+      - "boarding-pass/**"
+      - ".github/workflows/boarding-pass.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: boarding-pass-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: boarding-pass
+    env:
+      VERSION_CODE: ${{ github.run_number }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Use signing key from secrets (optional)
+        env:
+          KEYSTORE_B64: ${{ secrets.SIGNING_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
+            {
+              echo "SIGNING_STORE_FILE=$RUNNER_TEMP/release.jks"
+              echo "SIGNING_STORE_PASSWORD=$STORE_PASSWORD"
+              echo "SIGNING_KEY_ALIAS=$KEY_ALIAS"
+              echo "SIGNING_KEY_PASSWORD=$KEY_PASSWORD"
+            } >> "$GITHUB_ENV"
+            echo "Signing with the key from repository secrets"
+          else
+            echo "Signing with the bundled key (app/signing/boardingpass.jks)"
+          fi
+
+      - name: Unit tests
+        run: ./gradlew --no-daemon testDebugUnitTest
+
+      - name: Build APKs
+        run: ./gradlew --no-daemon assembleRelease assembleDebug
+
+      - name: Collect APKs
+        run: |
+          mkdir -p out
+          cp app/build/outputs/apk/release/app-release.apk "out/BoardingPass-1.0.${VERSION_CODE}.apk"
+          cp app/build/outputs/apk/debug/app-debug.apk "out/BoardingPass-1.0.${VERSION_CODE}-debug.apk"
+          ls -la out
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BoardingPass-apk-${{ github.run_number }}
+          path: boarding-pass/out/*.apk
+          if-no-files-found: error
+
+      - name: Publish "latest" pre-release
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG=boarding-pass-latest
+          gh release delete "$TAG" --yes --cleanup-tag || true
+          sleep 3
+          cat > notes.md <<NOTES
+          Сборка ${VERSION_CODE} из \`${GITHUB_REF_NAME}\` (${GITHUB_SHA::7}).
+
+          * **BoardingPass-1.0.${VERSION_CODE}.apk** — основная версия, ставить её.
+          * **BoardingPass-1.0.${VERSION_CODE}-debug.apk** — отладочная, ставится отдельным приложением.
+
+          Android 8.0+. При установке разрешите «Установку из неизвестных источников».
+          NOTES
+          gh release create "$TAG" out/*.apk \
+            --prerelease \
+            --target "$GITHUB_SHA" \
+            --title "Посадочные — сборка ${VERSION_CODE}" \
+            --notes-file notes.md

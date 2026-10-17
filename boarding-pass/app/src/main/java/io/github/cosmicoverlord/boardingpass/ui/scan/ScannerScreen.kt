@@ -1,0 +1,279 @@
+package io.github.cosmicoverlord.boardingpass.ui.scan
+
+import android.Manifest
+import android.content.pm.PackageManager
+import android.util.Size
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.camera.core.ImageAnalysis
+import androidx.camera.core.resolutionselector.ResolutionSelector
+import androidx.camera.core.resolutionselector.ResolutionStrategy
+import androidx.camera.mlkit.vision.MlKitAnalyzer
+import androidx.camera.view.LifecycleCameraController
+import androidx.camera.view.PreviewView
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.FlashOff
+import androidx.compose.material.icons.filled.FlashOn
+import androidx.compose.material.icons.filled.PhotoLibrary
+import androidx.compose.material.icons.filled.QrCodeScanner
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size as GeoSize
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.google.mlkit.vision.barcode.BarcodeScanning
+import io.github.cosmicoverlord.boardingpass.core.bcbp.BcbpParser
+import io.github.cosmicoverlord.boardingpass.core.model.DecodedCode
+import io.github.cosmicoverlord.boardingpass.importer.BarcodeDecoder
+import io.github.cosmicoverlord.boardingpass.importer.toDecoded
+
+@Composable
+fun ScannerScreen(
+    onBack: () -> Unit,
+    onBoardingPass: (DecodedCode) -> Unit,
+    onOtherCode: (DecodedCode) -> Unit,
+    onPickImage: (android.net.Uri) -> Unit,
+) {
+    val context = LocalContext.current
+    var granted by remember {
+        mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED)
+    }
+    val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted = it }
+    val pickImage = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        uri?.let(onPickImage)
+    }
+    LaunchedEffect(Unit) { if (!granted) permission.launch(Manifest.permission.CAMERA) }
+    var torch by remember { mutableStateOf(false) }
+    var other by remember { mutableStateOf<DecodedCode?>(null) }
+
+    Scaffold(
+        containerColor = Color.Black,
+        topBar = {
+            TopAppBar(
+                title = { Text("Сканирование") },
+                navigationIcon = {
+                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Назад") }
+                },
+                actions = {
+                    if (granted) {
+                        IconButton(onClick = { torch = !torch }) {
+                            Icon(if (torch) Icons.Default.FlashOff else Icons.Default.FlashOn, contentDescription = "Фонарик")
+                        }
+                    }
+                    IconButton(onClick = { pickImage.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }) {
+                        Icon(Icons.Default.PhotoLibrary, contentDescription = "Из галереи")
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = Color.Black,
+                    titleContentColor = Color.White,
+                    navigationIconContentColor = Color.White,
+                    actionIconContentColor = Color.White,
+                ),
+            )
+        },
+    ) { padding ->
+        Box(Modifier.fillMaxSize().padding(padding)) {
+            if (granted) {
+                CameraPreview(
+                    torch = torch,
+                    onBoardingPass = onBoardingPass,
+                    onOtherCode = { other = it },
+                )
+                ScanOverlay()
+                Text(
+                    "Наведите камеру на штрихкод посадочного талона",
+                    color = Color.White,
+                    textAlign = TextAlign.Center,
+                    style = MaterialTheme.typography.bodyLarge,
+                    modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth().padding(24.dp),
+                )
+                other?.let { code ->
+                    OtherCodeCard(
+                        code = code,
+                        onSave = { onOtherCode(code) },
+                        onDismiss = { other = null },
+                        modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(16.dp),
+                    )
+                }
+            } else {
+                Column(
+                    Modifier.align(Alignment.Center).padding(32.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                ) {
+                    Icon(Icons.Default.QrCodeScanner, contentDescription = null, tint = Color.White, modifier = Modifier.size(64.dp))
+                    Text(
+                        "Нужен доступ к камере, чтобы считать штрихкод. Можно также выбрать скриншот из галереи.",
+                        color = Color.White,
+                        textAlign = TextAlign.Center,
+                    )
+                    Button(onClick = { permission.launch(Manifest.permission.CAMERA) }) { Text("Разрешить камеру") }
+                    TextButton(onClick = { pickImage.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }) {
+                        Text("Выбрать из галереи", color = Color.White)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CameraPreview(
+    torch: Boolean,
+    onBoardingPass: (DecodedCode) -> Unit,
+    onOtherCode: (DecodedCode) -> Unit,
+) {
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val haptics = LocalHapticFeedback.current
+    val controller = remember {
+        LifecycleCameraController(context).apply {
+            imageAnalysisResolutionSelector = ResolutionSelector.Builder()
+                .setResolutionStrategy(
+                    ResolutionStrategy(Size(1920, 1080), ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER),
+                )
+                .build()
+            imageAnalysisBackpressureStrategy = ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST
+        }
+    }
+    val currentOnPass by rememberUpdatedState(onBoardingPass)
+    val currentOnOther by rememberUpdatedState(onOtherCode)
+
+    DisposableEffect(lifecycleOwner) {
+        val scanner = BarcodeScanning.getClient(BarcodeDecoder.scannerOptions())
+        val executor = ContextCompat.getMainExecutor(context)
+        var done = false
+        var lastOther: String? = null
+        var otherHits = 0
+        controller.setImageAnalysisAnalyzer(
+            executor,
+            MlKitAnalyzer(listOf(scanner), ImageAnalysis.COORDINATE_SYSTEM_VIEW_REFERENCED, executor) { result ->
+                if (done) return@MlKitAnalyzer
+                val codes = result.getValue(scanner).orEmpty().mapNotNull { it.toDecoded() }
+                val pass = codes.firstOrNull { BcbpParser.parseOrNull(it.raw) != null }
+                if (pass != null) {
+                    done = true
+                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                    currentOnPass(pass)
+                    return@MlKitAnalyzer
+                }
+                // Something that is not a boarding pass: offer it only once it is seen steadily.
+                val first = codes.firstOrNull() ?: return@MlKitAnalyzer
+                if (first.raw == lastOther) otherHits++ else {
+                    lastOther = first.raw
+                    otherHits = 1
+                }
+                if (otherHits == 5) currentOnOther(first)
+            },
+        )
+        controller.bindToLifecycle(lifecycleOwner)
+        onDispose {
+            controller.clearImageAnalysisAnalyzer()
+            controller.unbind()
+            scanner.close()
+        }
+    }
+    LaunchedEffect(torch) { controller.enableTorch(torch) }
+
+    AndroidView(
+        factory = { ctx ->
+            PreviewView(ctx).apply {
+                scaleType = PreviewView.ScaleType.FILL_CENTER
+                this.controller = controller
+            }
+        },
+        modifier = Modifier.fillMaxSize(),
+    )
+}
+
+@Composable
+private fun ScanOverlay() {
+    Canvas(
+        Modifier
+            .fillMaxSize()
+            .graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen),
+    ) {
+        val w = size.width * 0.86f
+        val h = minOf(size.height * 0.42f, w * 0.85f)
+        val topLeft = Offset((size.width - w) / 2, (size.height - h) / 2)
+        val radius = CornerRadius(28.dp.toPx())
+        drawRect(Color.Black.copy(alpha = 0.45f))
+        drawRoundRect(Color.Transparent, topLeft, GeoSize(w, h), radius, blendMode = BlendMode.Clear)
+        drawRoundRect(Color.White, topLeft, GeoSize(w, h), radius, style = Stroke(width = 3.dp.toPx()))
+    }
+}
+
+@Composable
+private fun OtherCodeCard(code: DecodedCode, onSave: () -> Unit, onDismiss: () -> Unit, modifier: Modifier = Modifier) {
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+    ) {
+        Column(Modifier.padding(16.dp)) {
+            Text("Найден код, но это не посадочный IATA", style = MaterialTheme.typography.titleSmall)
+            Spacer(Modifier.height(4.dp))
+            Text(
+                code.raw,
+                style = MaterialTheme.typography.bodySmall,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(8.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                TextButton(onClick = onDismiss) { Text("Продолжить") }
+                TextButton(onClick = onSave) { Text("Сохранить как есть") }
+            }
+        }
+    }
+}

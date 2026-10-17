@@ -1,0 +1,189 @@
+package io.github.cosmicoverlord.boardingpass.ui.components
+
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import io.github.cosmicoverlord.boardingpass.core.model.StatusKind
+import io.github.cosmicoverlord.boardingpass.ui.theme.LocalStatusColors
+import java.time.Duration
+import java.time.LocalDate
+import java.time.OffsetDateTime
+import java.time.format.DateTimeFormatter
+import java.util.Locale
+
+@Composable
+fun statusColor(kind: StatusKind): Color {
+    val c = LocalStatusColors.current
+    return when (kind) {
+        StatusKind.SCHEDULED, StatusKind.CHECK_IN, StatusKind.LANDED, StatusKind.ARRIVED -> c.good
+        StatusKind.BOARDING, StatusKind.DEPARTED, StatusKind.EN_ROUTE -> c.info
+        StatusKind.DELAYED, StatusKind.GATE_CLOSED, StatusKind.DIVERTED -> c.warn
+        StatusKind.CANCELLED -> c.bad
+        StatusKind.UNKNOWN -> c.neutral
+    }
+}
+
+@Composable
+fun StatusChip(kind: StatusKind, modifier: Modifier = Modifier) {
+    val color = statusColor(kind)
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(50),
+        color = color.copy(alpha = 0.14f),
+        contentColor = color,
+    ) {
+        Text(
+            kind.label,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+        )
+    }
+}
+
+@Composable
+fun SectionCard(
+    title: String?,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            if (title != null) {
+                Text(
+                    title,
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+            content()
+        }
+    }
+}
+
+/** Small label-over-value block used in grids of boarding pass facts. */
+@Composable
+fun Fact(label: String, value: String?, modifier: Modifier = Modifier, emphasize: Boolean = false) {
+    Column(modifier) {
+        Text(
+            label.uppercase(),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+        )
+        Text(
+            value?.ifBlank { null } ?: "—",
+            style = if (emphasize) MaterialTheme.typography.headlineSmall else MaterialTheme.typography.titleMedium,
+            fontWeight = if (emphasize) FontWeight.Bold else FontWeight.Medium,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+@Composable
+fun FactRow(vararg facts: Pair<String, String?>, emphasize: Boolean = false) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        facts.forEach { (label, value) -> Fact(label, value, Modifier.weight(1f), emphasize) }
+    }
+}
+
+@Composable
+fun IconLine(icon: ImageVector, text: String, modifier: Modifier = Modifier, color: Color = Color.Unspecified) {
+    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
+        Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.width(8.dp))
+        Text(text, style = MaterialTheme.typography.bodyMedium, color = color)
+    }
+}
+
+object Fmt {
+    private val ru = Locale.getDefault()
+    private val dayMonth = DateTimeFormatter.ofPattern("EEE, d MMMM", ru)
+    private val dayMonthYear = DateTimeFormatter.ofPattern("EEE, d MMMM yyyy", ru)
+    private val hm = DateTimeFormatter.ofPattern("HH:mm")
+    private val shortDate = DateTimeFormatter.ofPattern("d MMM", ru)
+
+    fun date(d: LocalDate?, today: LocalDate = LocalDate.now()): String {
+        d ?: return "Дата неизвестна"
+        val base = (if (d.year == today.year) dayMonth else dayMonthYear).format(d)
+        val rel = when (d) {
+            today -> "сегодня"
+            today.plusDays(1) -> "завтра"
+            today.minusDays(1) -> "вчера"
+            else -> null
+        }
+        return if (rel != null) "$base · $rel" else base
+    }
+
+    fun time(t: OffsetDateTime?): String? = t?.format(hm)
+
+    /** Time with the date appended when it differs from the flight date. */
+    fun timeOn(t: OffsetDateTime?, flightDate: LocalDate?): String? {
+        t ?: return null
+        val s = t.format(hm)
+        return if (flightDate != null && t.toLocalDate() != flightDate) "$s (${t.format(shortDate)})" else s
+    }
+
+    fun delay(scheduled: OffsetDateTime?, actual: OffsetDateTime?): String? {
+        if (scheduled == null || actual == null) return null
+        val m = Duration.between(scheduled, actual).toMinutes()
+        return when {
+            m >= 5 -> "+" + duration(m)
+            m <= -5 -> "−" + duration(-m)
+            else -> null
+        }
+    }
+
+    fun duration(minutes: Long): String = if (minutes >= 60) "${minutes / 60} ч ${minutes % 60} мин" else "$minutes мин"
+
+    fun ago(millis: Long?, now: Long = System.currentTimeMillis()): String {
+        millis ?: return "никогда"
+        val m = (now - millis) / 60_000
+        return when {
+            m < 1 -> "только что"
+            m < 60 -> "$m мин назад"
+            m < 24 * 60 -> "${m / 60} ч назад"
+            else -> "${m / (24 * 60)} дн назад"
+        }
+    }
+}
+
+fun Context.findActivity(): Activity? {
+    var c: Context? = this
+    while (c is ContextWrapper) {
+        if (c is Activity) return c
+        c = c.baseContext
+    }
+    return null
+}
