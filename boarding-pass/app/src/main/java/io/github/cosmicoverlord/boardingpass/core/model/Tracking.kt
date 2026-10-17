@@ -12,6 +12,25 @@ object Tracking {
         return p.status?.kind?.isFinal != true
     }
 
+    /** A manual refresh covers every upcoming flight that has a number and a date. */
+    fun isRefreshable(p: BoardingPass, today: LocalDate): Boolean =
+        p.date != null && p.carrier.isNotBlank() && p.flightNumber.isNotBlank() && isUpcoming(p, today)
+
+    const val LOOKAHEAD_DAYS = 3L
+    const val SLOW_REFRESH_MS = 6 * 60 * 60 * 1000L
+
+    /**
+     * Background refresh: flights around departure on every run; later ones (up to
+     * [LOOKAHEAD_DAYS] ahead) every [SLOW_REFRESH_MS], enough for schedule changes without
+     * spending the API quota.
+     */
+    fun needsBackgroundRefresh(p: BoardingPass, today: LocalDate, now: Long): Boolean {
+        if (isTrackable(p, today)) return true
+        val d = p.date ?: return false
+        if (!isRefreshable(p, today) || d.isAfter(today.plusDays(LOOKAHEAD_DAYS))) return false
+        return now - (p.statusCheckedAt ?: 0L) >= SLOW_REFRESH_MS
+    }
+
     /** Upcoming = not yet arrived and not more than a day in the past. */
     fun isUpcoming(p: BoardingPass, today: LocalDate): Boolean {
         if (p.status?.kind?.isFinal == true) return false

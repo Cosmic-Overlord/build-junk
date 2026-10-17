@@ -4,6 +4,7 @@ import io.github.cosmicoverlord.boardingpass.core.model.BoardingPass
 import io.github.cosmicoverlord.boardingpass.core.model.FlightStatus
 import io.github.cosmicoverlord.boardingpass.core.model.Rush
 import io.github.cosmicoverlord.boardingpass.core.model.StatusKind
+import io.github.cosmicoverlord.boardingpass.core.model.Tracking
 import io.github.cosmicoverlord.boardingpass.core.seatmap.AircraftMatcher
 import io.github.cosmicoverlord.boardingpass.core.seatmap.SeatMapLogic
 import io.github.cosmicoverlord.boardingpass.core.seatmap.SeatMapsParser
@@ -15,6 +16,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import java.time.Instant
+import java.time.LocalDate
 
 /** Fixtures are small hand-written fragments shaped like the site's markup, not copies of it. */
 class SeatMapsTest {
@@ -190,6 +192,28 @@ class SeatMapsTest {
         assertEquals(inside, Rush.nextStart(listOf(a, b), inside))
         assertEquals(Instant.parse("2026-10-17T11:00:00Z"), Rush.nextStart(listOf(a, b), Instant.parse("2026-10-17T08:00:00Z")))
         assertNull(Rush.nextStart(listOf(a, b), Instant.parse("2026-10-17T13:00:00Z")))
+    }
+
+    @Test
+    fun refreshCoversLaterFlightsToo() {
+        val today = LocalDate.of(2026, 10, 17)
+        val now = 1_000_000_000_000L
+        fun p(date: String, checkedAgoH: Long?) = BoardingPass(
+            id = date, createdAt = 0, barcode = "", carrier = "SU", flightNumber = "12", flightDate = date,
+            statusCheckedAt = checkedAgoH?.let { now - it * 3_600_000L },
+        )
+        val tomorrow = p("2026-10-18", 0)
+        val inTwoDays = p("2026-10-19", 1)
+        val inTwoDaysStale = p("2026-10-19", 7)
+        val nextWeek = p("2026-10-24", null)
+        // Pull-to-refresh: every upcoming flight.
+        assertTrue(listOf(tomorrow, inTwoDays, nextWeek).all { Tracking.isRefreshable(it, today) })
+        // Background: near flights always, later ones only when 6 h stale and within 3 days.
+        val bg = { x: BoardingPass -> Tracking.needsBackgroundRefresh(x, today, now) }
+        assertTrue(bg(tomorrow))
+        assertFalse(bg(inTwoDays))
+        assertTrue(bg(inTwoDaysStale))
+        assertFalse(bg(nextWeek))
     }
 
     @Test

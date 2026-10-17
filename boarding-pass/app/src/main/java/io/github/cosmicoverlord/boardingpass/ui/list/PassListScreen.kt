@@ -69,6 +69,7 @@ import io.github.cosmicoverlord.boardingpass.ui.AppViewModel
 import io.github.cosmicoverlord.boardingpass.ui.components.Fmt
 import io.github.cosmicoverlord.boardingpass.ui.components.RouteRow
 import io.github.cosmicoverlord.boardingpass.ui.components.StatusChip
+import io.github.cosmicoverlord.boardingpass.ui.theme.LocalStatusColors
 import java.time.LocalDate
 import io.github.cosmicoverlord.boardingpass.core.tr
 
@@ -283,6 +284,15 @@ private fun PassCard(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            pass.statusError?.let { error ->
+                Text(
+                    "⚠ " + tr("Статус не обновился", "Status not refreshed") + ": " + error,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = LocalStatusColors.current.warn,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
             }

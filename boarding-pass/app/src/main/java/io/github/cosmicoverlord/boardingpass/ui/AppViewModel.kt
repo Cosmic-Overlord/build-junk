@@ -125,7 +125,14 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 if (!settings.value.trackingEnabled) {
                     _events.send(UiEvent.Message(tr("Чтобы получать статус рейсов, выберите источник в настройках", "To get flight status, choose a source in Settings")))
                 } else {
-                    AppGraph.statusUpdater.refreshStale(maxAgeMs = 0)
+                    val r = AppGraph.statusUpdater.refreshUpcoming()
+                    val text = when {
+                        r.flights == 0 -> tr("Нет предстоящих рейсов с номером и датой", "No upcoming flights with a number and date")
+                        r.failed.isEmpty() -> tr("Обновлено рейсов: ${r.ok}", "Flights refreshed: ${r.ok}")
+                        else -> tr("Обновлено ${r.ok} из ${r.flights}", "Refreshed ${r.ok} of ${r.flights}") + ". " +
+                            r.failed.joinToString("; ") { (flight, error) -> "$flight — $error" }
+                    }
+                    _events.send(UiEvent.Message(text))
                 }
             } finally {
                 _refreshing.update { it - ALL }
