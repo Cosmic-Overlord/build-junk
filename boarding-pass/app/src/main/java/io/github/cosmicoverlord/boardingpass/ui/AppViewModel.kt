@@ -173,6 +173,14 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Undoes "Hide" on the flight's live card, for everyone on the flight. */
+    fun showLiveCard(id: String) {
+        viewModelScope.launch {
+            val key = repo.get(id)?.flightKey ?: return@launch
+            repo.update { list -> list.map { if (it.flightKey == key) it.copy(liveHidden = false) else it } }
+        }
+    }
+
     fun updateSettings(transform: (AppSettings) -> AppSettings) {
         val next = settingsStore.update(transform)
         TrackingScheduler.apply(getApplication<Application>(), next)

@@ -48,6 +48,8 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.cosmicoverlord.boardingpass.BuildConfig
 import io.github.cosmicoverlord.boardingpass.core.I18n
@@ -55,6 +57,7 @@ import io.github.cosmicoverlord.boardingpass.core.status.ProviderType
 import io.github.cosmicoverlord.boardingpass.core.tr
 import io.github.cosmicoverlord.boardingpass.data.AppLanguage
 import io.github.cosmicoverlord.boardingpass.data.ThemeMode
+import io.github.cosmicoverlord.boardingpass.tracking.LiveUpdates
 import io.github.cosmicoverlord.boardingpass.tracking.Notifications
 import io.github.cosmicoverlord.boardingpass.ui.AppViewModel
 import io.github.cosmicoverlord.boardingpass.ui.components.SectionCard
@@ -62,6 +65,7 @@ import io.github.cosmicoverlord.boardingpass.ui.components.findActivity
 
 private val EDGE_OPTIONS = listOf(0, 2, 3, 4, 5)
 private val RUSH_OPTIONS = listOf(1, 2, 5)
+private val LIVE_LEAD_OPTIONS = listOf(1, 2, 3, 6)
 
 @Composable
 fun SettingsScreen(vm: AppViewModel, onBack: () -> Unit) {
@@ -69,6 +73,9 @@ fun SettingsScreen(vm: AppViewModel, onBack: () -> Unit) {
     val context = LocalContext.current
     val uriHandler = LocalUriHandler.current
     var showKey by remember { mutableStateOf(false) }
+    var canPromote by remember { mutableStateOf(LiveUpdates.canPromote(context)) }
+    // The user may come back from the system settings having allowed Live Updates.
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { canPromote = LiveUpdates.canPromote(context) }
     val notifPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
     val refreshOptions = listOf(
         0 to tr("Выкл", "Off"), 15 to tr("15 м", "15 m"), 30 to tr("30 м", "30 m"),
@@ -227,6 +234,59 @@ fun SettingsScreen(vm: AppViewModel, onBack: () -> Unit) {
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error,
                     )
+                }
+            }
+
+            SectionCard(tr("Эфир рейса", "Live flight")) {
+                SwitchRow(
+                    title = tr("Карточка рейса в строке состояния", "Flight card in the status bar"),
+                    subtitle = tr(
+                        "Как «Эфир активности» на iPhone: на экране блокировки и в шторке — рейс, время вылета и " +
+                            "прилёта по местному, выход и полоса прогресса с самолётом; у часов — выход до вылета и " +
+                            "оставшееся время в полёте. Отсчёт идёт сам, без интернета.",
+                        "Like Live Activities on iPhone: the flight, local departure and arrival times, the gate and " +
+                            "a progress bar with the plane on the lock screen; next to the clock, the gate before " +
+                            "departure and the time left in the air. Countdowns run offline.",
+                    ),
+                    checked = settings.liveUpdates,
+                ) { on ->
+                    vm.updateSettings { it.copy(liveUpdates = on) }
+                    if (on) askNotificationsOnce()
+                }
+                if (settings.liveUpdates) {
+                    Text(tr("Показывать за", "Show from"), style = MaterialTheme.typography.titleSmall)
+                    SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                        LIVE_LEAD_OPTIONS.forEachIndexed { index, hours ->
+                            SegmentedButton(
+                                selected = settings.liveLeadHours == hours,
+                                onClick = { vm.updateSettings { it.copy(liveLeadHours = hours) } },
+                                shape = SegmentedButtonDefaults.itemShape(index, LIVE_LEAD_OPTIONS.size),
+                            ) { Text(tr("$hours ч", "$hours h")) }
+                        }
+                    }
+                    if (!canPromote) {
+                        Text(
+                            tr(
+                                "Android не показывает карточку у часов: оперативные уведомления для приложения выключены.",
+                                "Android won't show the card next to the clock: Live Updates are off for this app.",
+                            ),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                        TextButton(onClick = { LiveUpdates.openPromotionSettings(context) }) {
+                            Text(tr("Включить в настройках Android", "Turn on in Android settings"))
+                        }
+                    }
+                    if (!settings.trackingEnabled) {
+                        Text(
+                            tr(
+                                "Время вылета и прилёта берётся из статуса рейса — нужен источник статуса и ключ.",
+                                "Departure and arrival times come from the flight status — set a status source and key.",
+                            ),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
                 }
             }
 

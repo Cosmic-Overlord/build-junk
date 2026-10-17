@@ -57,6 +57,8 @@ data class BoardingPass(
     val seatMapVariant: String? = null,
     /** The user stopped the pre-departure frequent refresh for this flight. */
     val rushMuted: Boolean = false,
+    /** The user dismissed this flight's live card. */
+    val liveHidden: Boolean = false,
 ) {
     val date: LocalDate? get() = flightDate?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
 

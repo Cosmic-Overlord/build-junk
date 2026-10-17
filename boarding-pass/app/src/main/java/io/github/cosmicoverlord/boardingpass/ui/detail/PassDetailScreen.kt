@@ -152,6 +152,11 @@ fun PassDetailScreen(
                 Spacer(Modifier.size(8.dp))
                 Text(tr("Посмотреть схему самолёта", "View the seat map"))
             }
+            if (settings.liveUpdates && pass.liveHidden) {
+                TextButton(onClick = { vm.showLiveCard(passId) }, modifier = Modifier.fillMaxWidth()) {
+                    Text(tr("Вернуть карточку рейса в строку состояния", "Bring back the flight card"))
+                }
+            }
 
             StatusCard(
                 pass = pass,

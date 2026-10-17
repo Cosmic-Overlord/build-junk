@@ -16,6 +16,9 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
+    <!-- Android 16+: the flight's live card may be shown as a Live Update (status bar chip). -->
+    <uses-permission android:name="android.permission.POST_PROMOTED_NOTIFICATIONS" />
+
     <application
         android:name=".BoardingApp"
         android:allowBackup="true"
@@ -67,6 +70,14 @@
 
         <receiver
             android:name=".tracking.RushAlarmReceiver"
+            android:exported="false" />
+
+        <receiver
+            android:name=".tracking.LiveTickReceiver"
+            android:exported="false" />
+
+        <receiver
+            android:name=".tracking.LiveActionReceiver"
             android:exported="false" />
 
         <receiver

@@ -47,10 +47,14 @@ class RushService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val active = activeNow()
         try {
+            val (id, notification) = LiveUpdates.foreground(this, active, foregroundId)
+                ?: (Notifications.RUSH_ID to Notifications.rush(this, active))
+            // A new id makes the system drop the previous foreground notification.
             ServiceCompat.startForeground(
-                this, Notifications.RUSH_ID, Notifications.rush(this, active),
+                this, id, notification,
                 if (Build.VERSION.SDK_INT >= 29) ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC else 0,
             )
+            foregroundId = id
         } catch (e: Exception) {
             Log.w(TAG, "Can't go foreground", e)
             stopSelf()
@@ -88,7 +92,8 @@ class RushService : Service() {
                 }
                 val still = activeNow()
                 if (still.isEmpty()) break
-                Notifications.updateRush(this, still)
+                if (foregroundId == Notifications.RUSH_ID) Notifications.updateRush(this, still)
+                LiveUpdates.refresh(this)
                 delay(settings.rushIntervalMinutes.coerceIn(1, 15) * 60_000L)
             }
         } finally {
@@ -100,9 +105,13 @@ class RushService : Service() {
         running = false
         wakeLock?.let { if (it.isHeld) it.release() }
         wakeLock = null
-        ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
+        // A live card stays after the frequent refresh ends; the plain service notice goes.
+        val keep = foregroundId != 0 && foregroundId != Notifications.RUSH_ID
+        ServiceCompat.stopForeground(this, if (keep) ServiceCompat.STOP_FOREGROUND_DETACH else ServiceCompat.STOP_FOREGROUND_REMOVE)
+        foregroundId = 0
         stopSelf()
         RushScheduler.reschedule(applicationContext)
+        LiveUpdates.refresh(applicationContext)
     }
 
     /** Android 15+ caps dataSync services; the hour before departure is well inside the limit. */
@@ -113,6 +122,7 @@ class RushService : Service() {
 
     override fun onDestroy() {
         running = false
+        foregroundId = 0
         wakeLock?.let { if (it.isHeld) it.release() }
         scope.cancel()
         super.onDestroy()
@@ -120,11 +130,19 @@ class RushService : Service() {
 
     companion object {
         const val ACTION_STOP = "io.github.cosmicoverlord.boardingpass.RUSH_STOP"
+
+        /** Re-pick the notification to run under, e.g. after its live card was hidden. */
+        const val ACTION_UPDATE = "io.github.cosmicoverlord.boardingpass.RUSH_UPDATE"
         private const val TAG = "RushService"
         private const val MAX_RUN_MS = 3 * 60 * 60 * 1000L
 
         @Volatile
         var running = false
+            private set
+
+        /** The notification the service runs under: a flight's live card, or [Notifications.RUSH_ID]. */
+        @Volatile
+        var foregroundId = 0
             private set
 
         fun activeNow(): List<BoardingPass> {
@@ -158,12 +176,7 @@ object RushScheduler {
         }
         val now = System.currentTimeMillis()
         if (RushService.running && next.toEpochMilli() <= now) return
-        val at = maxOf(next.toEpochMilli(), now + 1_000)
-        if (Build.VERSION.SDK_INT >= 31 && !am.canScheduleExactAlarms()) {
-            am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi)
-        } else {
-            am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi)
-        }
+        am.wakeAt(maxOf(next.toEpochMilli(), now + 1_000), pi)
     }
 
     /** Fallback when the system refuses the foreground service: single refreshes on alarms. */
@@ -175,12 +188,16 @@ object RushScheduler {
                 .build(),
         )
         val am = context.getSystemService(AlarmManager::class.java)
-        val at = System.currentTimeMillis() + minutes * 60_000L
-        if (Build.VERSION.SDK_INT >= 31 && !am.canScheduleExactAlarms()) {
-            am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, alarmIntent(context))
-        } else {
-            am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, alarmIntent(context))
-        }
+        am.wakeAt(System.currentTimeMillis() + minutes * 60_000L, alarmIntent(context))
+    }
+}
+
+/** Exact wake-up when allowed (USE_EXACT_ALARM), else as close as the system permits. */
+internal fun AlarmManager.wakeAt(at: Long, pi: PendingIntent) {
+    if (Build.VERSION.SDK_INT >= 31 && !canScheduleExactAlarms()) {
+        setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi)
+    } else {
+        setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi)
     }
 }
 
@@ -213,9 +230,10 @@ class RushOnceWorker(context: Context, params: WorkerParameters) : CoroutineWork
     }
 }
 
-/** Alarms don't survive a reboot or an app update. */
+/** Alarms and notifications don't survive a reboot; alarms don't survive an app update. */
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         RushScheduler.reschedule(context)
+        LiveUpdates.refresh(context)
     }
 }

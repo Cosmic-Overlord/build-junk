@@ -13,6 +13,7 @@ import io.github.cosmicoverlord.boardingpass.data.SettingsStore
 import io.github.cosmicoverlord.boardingpass.data.StatusUpdater
 import io.github.cosmicoverlord.boardingpass.importer.BarcodeDecoder
 import io.github.cosmicoverlord.boardingpass.importer.PassImporter
+import io.github.cosmicoverlord.boardingpass.tracking.LiveUpdates
 import io.github.cosmicoverlord.boardingpass.tracking.Notifications
 import io.github.cosmicoverlord.boardingpass.tracking.RushScheduler
 import io.github.cosmicoverlord.boardingpass.tracking.TrackingScheduler
@@ -41,9 +42,11 @@ class BoardingApp : Application() {
             }
         }
         AppGraph.scope.launch {
-            // Any change to passes, statuses or settings can move the next pre-departure window.
+            // Any change to passes, statuses or settings can move the next pre-departure window
+            // and changes what the live cards show.
             combine(AppGraph.repository.passes, settings.state) { _, _ -> }.collect {
                 RushScheduler.reschedule(this@BoardingApp)
+                LiveUpdates.refresh(this@BoardingApp)
             }
         }
         // Warm up the reference data off the main thread.

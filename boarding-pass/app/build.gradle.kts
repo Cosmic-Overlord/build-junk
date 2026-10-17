@@ -12,7 +12,8 @@ val buildNumber = (System.getenv("VERSION_CODE") ?: "1").toInt()
 
 android {
     namespace = "io.github.cosmicoverlord.boardingpass"
-    compileSdk = 35
+    // 36 for Live Updates (ProgressStyle, status bar chip); behaviour still targets 35.
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "io.github.cosmicoverlord.boardingpass"

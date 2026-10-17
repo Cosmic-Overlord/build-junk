@@ -87,6 +87,19 @@ object Notifications {
                 setShowBadge(false)
             },
         )
+        // Default importance so the card shows on the lock screen and can be promoted; no sound.
+        nm.createNotificationChannel(
+            NotificationChannel(LiveUpdates.CHANNEL, tr("Эфир рейса", "Live flight"), NotificationManager.IMPORTANCE_DEFAULT).apply {
+                description = tr(
+                    "Карточка рейса на экране блокировки и в строке состояния: отсчёт до вылета и прилёта, прогресс полёта",
+                    "The flight's card on the lock screen and in the status bar: countdowns to departure and arrival, flight progress",
+                )
+                setSound(null, null)
+                enableVibration(false)
+                setShowBadge(false)
+                lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
+            },
+        )
     }
 
     fun canNotify(context: Context): Boolean =
@@ -136,10 +149,7 @@ object Notifications {
                 st?.kind?.label,
             ).joinToString(" · ")
         }
-        val stop = PendingIntent.getService(
-            context, 0, Intent(context, RushService::class.java).setAction(RushService.ACTION_STOP),
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
-        )
+        val stop = rushStop(context)
         val title = first?.let { "${it.flightLabel}  ${it.from} → ${it.to}" } ?: tr("Перед вылетом", "Before departure")
         val updated = tr("обновлено", "updated") + " " + LocalTime.now().format(hm)
         return NotificationCompat.Builder(context, RUSH_CHANNEL)
@@ -156,6 +166,11 @@ object Notifications {
             .addAction(0, tr("Остановить", "Stop"), stop)
             .build()
     }
+
+    fun rushStop(context: Context): PendingIntent = PendingIntent.getService(
+        context, 0, Intent(context, RushService::class.java).setAction(RushService.ACTION_STOP),
+        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+    )
 
     fun updateRush(context: Context, active: List<BoardingPass>) {
         if (!canNotify(context)) return

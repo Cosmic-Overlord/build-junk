@@ -38,6 +38,10 @@ data class AppSettings(
     /** Frequent refresh during the hour before departure. */
     val rushEnabled: Boolean = true,
     val rushIntervalMinutes: Int = 2,
+    /** The flight's live card on the lock screen and in the status bar. */
+    val liveUpdates: Boolean = true,
+    /** How many hours before departure the live card appears. */
+    val liveLeadHours: Int = 3,
 ) {
     fun key(type: ProviderType = provider): String = keys[type].orEmpty()
     val trackingEnabled: Boolean get() = provider != ProviderType.NONE && key().isNotBlank()
@@ -73,6 +77,8 @@ class SettingsStore(context: Context) {
         theme = runCatching { ThemeMode.valueOf(prefs.getString("theme", null) ?: "SYSTEM") }.getOrDefault(ThemeMode.SYSTEM),
         rushEnabled = prefs.getBoolean("rush_enabled", true),
         rushIntervalMinutes = prefs.getInt("rush_interval", 2),
+        liveUpdates = prefs.getBoolean("live_updates", true),
+        liveLeadHours = prefs.getInt("live_lead_hours", 3),
     )
 
     private fun write(s: AppSettings) {
@@ -88,6 +94,8 @@ class SettingsStore(context: Context) {
             putString("theme", s.theme.name)
             putBoolean("rush_enabled", s.rushEnabled)
             putInt("rush_interval", s.rushIntervalMinutes)
+            putBoolean("live_updates", s.liveUpdates)
+            putInt("live_lead_hours", s.liveLeadHours)
         }.apply()
     }
 
