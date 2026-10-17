@@ -162,6 +162,42 @@ class StatusProvidersTest {
     }
 
     @Test
+    fun diffIgnoresDisappearingEstimate() {
+        val old = FlightStatus(provider = "X", fetchedAt = 0, kind = StatusKind.DELAYED,
+            depScheduled = "2026-10-17T10:00+03:00", depEstimated = "2026-10-17T10:40+03:00")
+        val new = old.copy(depEstimated = null)
+        assertTrue(StatusDiff.changes(old, new).isEmpty())
+        val rescheduled = new.copy(depScheduled = "2026-10-17T11:00+03:00")
+        assertEquals(listOf("Вылет: 10:00 → 11:00"), StatusDiff.changes(new, rescheduled))
+    }
+
+    @Test
+    fun otherDaysFlightIsNotUsed() {
+        val tomorrow = q.copy(date = LocalDate.of(2026, 10, 18))
+        val aviationStack = """
+            {"data":[{"flight_date":"2026-10-17","flight_status":"landed",
+              "departure":{"iata":"SVO","timezone":"Europe/Moscow","scheduled":"2026-10-17T10:00:00+00:00"},
+              "arrival":{"iata":"LED","timezone":"Europe/Moscow"}}]}
+        """.trimIndent()
+        val flightAware = """
+            {"flights":[{"origin":{"code_iata":"SVO","timezone":"Europe/Moscow"},
+              "destination":{"code_iata":"LED","timezone":"Europe/Moscow"},
+              "scheduled_out":"2026-10-17T07:00:00Z","actual_in":"2026-10-17T08:30:00Z"}]}
+        """.trimIndent()
+        for (parse in listOf<() -> FlightStatus>(
+            { AviationStackProvider.parse(aviationStack, tomorrow, 1L) },
+            { FlightAwareProvider.parse(flightAware, tomorrow, 1L) },
+        )) {
+            try {
+                parse()
+                fail()
+            } catch (e: StatusException) {
+                assertTrue(e.message!!.contains("2026-10-18"))
+            }
+        }
+    }
+
+    @Test
     fun readsWalletPass() {
         val passJson = """
             {"formatVersion":1,"barcodes":[{"message":"M1TEST/PAX           EABC123 SVOLEDSU 0012 290Y012A0045 100",

@@ -56,6 +56,7 @@ import io.github.cosmicoverlord.boardingpass.ui.AppViewModel
 import io.github.cosmicoverlord.boardingpass.ui.components.SectionCard
 
 private val REFRESH_OPTIONS = listOf(0 to "Выкл", 15 to "15 м", 30 to "30 м", 60 to "1 ч", 120 to "2 ч")
+private val EDGE_OPTIONS = listOf(0, 2, 3, 4, 5)
 
 @Composable
 fun SettingsScreen(vm: AppViewModel, onBack: () -> Unit) {
@@ -180,6 +181,24 @@ fun SettingsScreen(vm: AppViewModel, onBack: () -> Unit) {
                             }
                         },
                     )
+                }
+            }
+
+            SectionCard("Код на весь экран") {
+                Text(
+                    "Отступ кода от изогнутых боковых краёв экрана: на изгибе модули кода искажаются и сканер " +
+                        "у выхода может его не прочитать. Для Motorola Edge 50 Ultra — 4 мм.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                    EDGE_OPTIONS.forEachIndexed { index, mm ->
+                        SegmentedButton(
+                            selected = settings.edgeMarginMm == mm,
+                            onClick = { vm.updateSettings { it.copy(edgeMarginMm = mm) } },
+                            shape = SegmentedButtonDefaults.itemShape(index, EDGE_OPTIONS.size),
+                        ) { Text(if (mm == 0) "Нет" else "$mm мм") }
+                    }
                 }
             }
 

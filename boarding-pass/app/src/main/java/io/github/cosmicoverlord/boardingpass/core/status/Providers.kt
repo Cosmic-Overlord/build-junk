@@ -11,11 +11,9 @@ import kotlinx.serialization.json.JsonObject
 import java.time.LocalDate
 import java.time.OffsetDateTime
 import java.time.ZoneId
-import java.time.temporal.ChronoUnit
-import kotlin.math.abs
 
-private fun daysOff(t: OffsetDateTime?, date: LocalDate): Long =
-    t?.let { abs(ChronoUnit.DAYS.between(date, it.toLocalDate())) } ?: Long.MAX_VALUE
+private fun notOnDate(q: FlightQuery, source: String) =
+    StatusException("$source пока не отдаёт рейс ${q.designator} на ${q.date} — статус появится ближе к вылету")
 
 // ================================================================ AeroDataBox
 
@@ -134,8 +132,10 @@ class FlightAwareProvider(
             fun schedOut(f: JsonObject) =
                 Times.utcToZone(f.str("scheduled_out") ?: f.str("scheduled_off"), depZone(f))
 
+            // Never fall back to another day's flight: its "arrived" status would end tracking of ours.
             val sameOrigin = flights.filter { it.obj("origin").str("code_iata") == q.from }.ifEmpty { flights }
-            val f = sameOrigin.minByOrNull { daysOff(schedOut(it), q.date) } ?: sameOrigin.first()
+            val f = sameOrigin.firstOrNull { schedOut(it)?.toLocalDate() == q.date }
+                ?: throw notOnDate(q, "FlightAware")
             val dz = depZone(f)
             val az = f.obj("destination").str("timezone").zone() ?: q.toZone
 
@@ -180,9 +180,10 @@ class AviationStackProvider(private val apiKey: String, private val http: HttpCl
 
     override suspend fun fetch(q: FlightQuery): FlightStatus = withContext(Dispatchers.IO) {
         val query = "v1/flights?access_key=${enc(apiKey)}&flight_iata=${enc(q.designator)}"
-        var resp = http.get("https://api.aviationstack.com/$query", emptyMap())
-        // The free plan only works over plain HTTP.
-        if (resp.body.contains("https_access_restricted")) {
+        var resp = http.get("${if (httpOnly) "http" else "https"}://api.aviationstack.com/$query", emptyMap())
+        // The free plan only works over plain HTTP; remember that so each refresh costs one request.
+        if (!httpOnly && resp.body.contains("https_access_restricted")) {
+            httpOnly = true
             resp = http.get("http://api.aviationstack.com/$query", emptyMap())
         }
         if (resp.code !in 200..299 && parseError(resp.body) == null) checkHttp(resp)
@@ -190,6 +191,9 @@ class AviationStackProvider(private val apiKey: String, private val http: HttpCl
     }
 
     companion object {
+        @Volatile
+        private var httpOnly = false
+
         private fun parseError(body: String): String? {
             val root = runCatching { AppJson.parseToJsonElement(body) }
                 .getOrNull() ?: return null
@@ -208,13 +212,15 @@ class AviationStackProvider(private val apiKey: String, private val http: HttpCl
             val data = parseJson(body).arr("data")?.mapNotNull { it as? JsonObject }.orEmpty()
             if (data.isEmpty()) throw StatusException("Рейс не найден у источника данных")
 
+            // The request can't be filtered by date on the free plan, so match it here and never
+            // substitute another day's flight (its final status would stop tracking ours).
             val date = q.date.toString()
             val sameOrigin = data.filter { it.obj("departure").str("iata") == q.from }.ifEmpty { data }
-            val f = sameOrigin.firstOrNull { it.str("flight_date") == date }
-                ?: sameOrigin.minByOrNull { fl ->
-                    fl.str("flight_date")?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
-                        ?.let { abs(ChronoUnit.DAYS.between(q.date, it)) } ?: Long.MAX_VALUE
-                }!!
+            val f = sameOrigin.firstOrNull { fl ->
+                val d = fl.str("flight_date")
+                d == date || (d == null && Times.localInZone(fl.obj("departure").str("scheduled"),
+                    fl.obj("departure").str("timezone").zone() ?: q.fromZone)?.toLocalDate() == q.date)
+            } ?: throw notOnDate(q, "Aviationstack")
             val dep = f.obj("departure")
             val arr = f.obj("arrival")
             val dz = dep.str("timezone").zone() ?: q.fromZone

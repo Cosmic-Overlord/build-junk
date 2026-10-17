@@ -88,7 +88,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     },
                 ),
             )
-            ids.forEach { id -> if (settings.value.trackingEnabled) refresh(id, quiet = true) }
+            if (settings.value.trackingEnabled) {
+                // One request per flight: refresh() already updates every pass on the same flight.
+                ids.mapNotNull { repo.get(it) }.distinctBy { it.flightKey }.forEach { refresh(it.id, quiet = true) }
+            }
             return
         }
         outcomes.filterIsInstance<ImportOutcome.NotBoardingPass>().firstOrNull()?.let {
@@ -138,11 +141,20 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { repo.delete(id) }
     }
 
-    fun save(pass: BoardingPass) {
+    /**
+     * Applies user edits to the latest stored copy, so a status written by a refresh while the
+     * edit screen was open is kept, and a pass deleted meanwhile is not brought back.
+     */
+    fun saveEdits(id: String, edit: (BoardingPass) -> BoardingPass) {
         viewModelScope.launch {
-            val old = repo.get(pass.id)
-            val flightChanged = old == null || old.flightKey != pass.flightKey
-            repo.upsert(if (flightChanged) pass.copy(status = null, statusError = null, statusCheckedAt = null) else pass)
+            repo.modify(id) { current ->
+                val edited = edit(current)
+                if (edited.flightKey != current.flightKey) {
+                    edited.copy(status = null, statusError = null, statusCheckedAt = null)
+                } else {
+                    edited
+                }
+            }
         }
     }
 

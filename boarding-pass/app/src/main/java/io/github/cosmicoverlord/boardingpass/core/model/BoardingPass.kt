@@ -26,7 +26,7 @@ data class BoardingPass(
     val id: String,
     val createdAt: Long,
     val barcode: String,
-    val format: CodeFormat,
+    val format: CodeFormat = CodeFormat.QR_CODE,
     val legIndex: Int = 0,
     val legCount: Int = 1,
     val passengerName: String = "",

@@ -106,11 +106,12 @@ fun AppRoot(vm: AppViewModel) {
         composable(Routes.CODE) { entry ->
             val id = entry.arguments?.getString("id").orEmpty()
             val passes by vm.passes.collectAsStateWithLifecycle()
+            val settings by vm.settings.collectAsStateWithLifecycle()
             val pass = passes.firstOrNull { it.id == id }
             if (pass == null) {
                 LaunchedEffect(Unit) { nav.popBackStack() }
             } else {
-                FullscreenBarcodeScreen(pass, onClose = { nav.popBackStack() })
+                FullscreenBarcodeScreen(pass, settings.edgeMarginMm, onClose = { nav.popBackStack() })
             }
         }
         composable(Routes.EDIT) { entry ->

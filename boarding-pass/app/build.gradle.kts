@@ -21,7 +21,9 @@ android {
         versionCode = buildNumber
         versionName = "1.0.$buildNumber"
         ndk {
-            abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
+            // Motorola Edge 50 Ultra (Snapdragon 8s Gen 3) is 64-bit only; this keeps ML Kit's
+            // native library to a single copy.
+            abiFilters += listOf("arm64-v8a")
         }
     }
 

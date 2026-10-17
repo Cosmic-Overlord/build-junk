@@ -42,7 +42,8 @@ enum class ProviderType(val title: String, val description: String, val signupUr
     ),
     AVIATIONSTACK(
         "Aviationstack",
-        "Статус, терминал, выход, задержка, лента багажа. Бесплатно 100 запросов в месяц.",
+        "Статус, терминал, выход, задержка, лента багажа. Бесплатно 100 запросов в месяц, " +
+            "но бесплатный тариф работает только по HTTP — ключ передаётся без шифрования.",
         "https://aviationstack.com/signup/free",
     ),
 }
@@ -201,10 +202,15 @@ object StatusDiff {
         if (new.depGate != null && new.depGate != old.depGate) {
             out += "Выход: " + (old.depGate?.let { "$it → " } ?: "") + new.depGate
         }
-        val oldDep = old.depEstimated.toOdt() ?: old.depScheduled.toOdt()
-        val newDep = new.depEstimated.toOdt() ?: new.depScheduled.toOdt()
-        if (oldDep != null && newDep != null && kotlin.math.abs(Duration.between(oldDep, newDep).toMinutes()) >= 5) {
-            out += "Вылет: ${oldDep.format(hm)} → ${newDep.format(hm)}"
+        // A new estimate is compared with the previous best guess; a missing estimate is not a change.
+        val newEst = new.depEstimated.toOdt()
+        val (before, after) = if (newEst != null) {
+            (old.depEstimated.toOdt() ?: old.depScheduled.toOdt()) to newEst
+        } else {
+            old.depScheduled.toOdt() to new.depScheduled.toOdt()
+        }
+        if (before != null && after != null && kotlin.math.abs(Duration.between(before, after).toMinutes()) >= 5) {
+            out += "Вылет: ${before.format(hm)} → ${after.format(hm)}"
         }
         if (new.baggageBelt != null && new.baggageBelt != old.baggageBelt) out += "Лента выдачи багажа: ${new.baggageBelt}"
         return out

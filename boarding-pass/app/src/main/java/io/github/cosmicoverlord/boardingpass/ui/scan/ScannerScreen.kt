@@ -7,6 +7,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.ImageAnalysis
+import androidx.camera.core.ZoomState
 import androidx.camera.core.resolutionselector.ResolutionSelector
 import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.camera.mlkit.vision.MlKitAnalyzer
@@ -32,6 +33,8 @@ import androidx.compose.material.icons.filled.FlashOn
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material3.Button
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -49,6 +52,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -68,6 +72,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Observer
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.google.mlkit.vision.barcode.BarcodeScanning
 import io.github.cosmicoverlord.boardingpass.core.bcbp.BcbpParser
@@ -92,6 +97,7 @@ fun ScannerScreen(
     }
     LaunchedEffect(Unit) { if (!granted) permission.launch(Manifest.permission.CAMERA) }
     var torch by remember { mutableStateOf(false) }
+    var zoom by rememberSaveable { mutableStateOf(DEFAULT_ZOOM) }
     var other by remember { mutableStateOf<DecodedCode?>(null) }
 
     Scaffold(
@@ -125,24 +131,49 @@ fun ScannerScreen(
             if (granted) {
                 CameraPreview(
                     torch = torch,
+                    zoom = zoom,
                     onBoardingPass = onBoardingPass,
                     onOtherCode = { other = it },
                 )
                 ScanOverlay()
-                Text(
-                    "Наведите камеру на штрихкод посадочного талона",
-                    color = Color.White,
-                    textAlign = TextAlign.Center,
-                    style = MaterialTheme.typography.bodyLarge,
-                    modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth().padding(24.dp),
-                )
-                other?.let { code ->
-                    OtherCodeCard(
-                        code = code,
-                        onSave = { onOtherCode(code) },
-                        onDismiss = { other = null },
-                        modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(16.dp),
+                Column(
+                    Modifier.align(Alignment.TopCenter).fillMaxWidth().padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Text(
+                        "Наведите камеру на штрихкод посадочного талона",
+                        color = Color.White,
+                        textAlign = TextAlign.Center,
+                        style = MaterialTheme.typography.bodyLarge,
                     )
+                    Text(
+                        "Держите телефон в 20–30 см от кода, коснитесь экрана для фокуса",
+                        color = Color.White.copy(alpha = 0.75f),
+                        textAlign = TextAlign.Center,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                Column(
+                    Modifier.align(Alignment.BottomCenter).fillMaxWidth().navigationBarsPadding().padding(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        ZOOM_PRESETS.forEach { preset ->
+                            FilterChip(
+                                selected = zoom == preset,
+                                onClick = { zoom = preset },
+                                label = { Text(if (preset % 1f == 0f) "${preset.toInt()}×" else "$preset×") },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    containerColor = Color.Black.copy(alpha = 0.5f),
+                                    labelColor = Color.White,
+                                ),
+                            )
+                        }
+                    }
+                    other?.let { code ->
+                        OtherCodeCard(code = code, onSave = { onOtherCode(code) }, onDismiss = { other = null })
+                    }
                 }
             } else {
                 Column(
@@ -169,6 +200,7 @@ fun ScannerScreen(
 @Composable
 private fun CameraPreview(
     torch: Boolean,
+    zoom: Float,
     onBoardingPass: (DecodedCode) -> Unit,
     onOtherCode: (DecodedCode) -> Unit,
 ) {
@@ -187,6 +219,7 @@ private fun CameraPreview(
     }
     val currentOnPass by rememberUpdatedState(onBoardingPass)
     val currentOnOther by rememberUpdatedState(onOtherCode)
+    val currentZoom by rememberUpdatedState(zoom)
 
     DisposableEffect(lifecycleOwner) {
         val scanner = BarcodeScanning.getClient(BarcodeDecoder.scannerOptions())
@@ -216,13 +249,24 @@ private fun CameraPreview(
             },
         )
         controller.bindToLifecycle(lifecycleOwner)
+        // Zoom set before the camera opens is dropped, so apply the preset once the first zoom state arrives.
+        var zoomApplied = false
+        val zoomObserver = Observer<ZoomState> {
+            if (!zoomApplied) {
+                zoomApplied = true
+                controller.setZoomRatio(currentZoom)
+            }
+        }
+        controller.zoomState.observe(lifecycleOwner, zoomObserver)
         onDispose {
+            controller.zoomState.removeObserver(zoomObserver)
             controller.clearImageAnalysisAnalyzer()
             controller.unbind()
             scanner.close()
         }
     }
     LaunchedEffect(torch) { controller.enableTorch(torch) }
+    LaunchedEffect(zoom) { controller.setZoomRatio(zoom) }
 
     AndroidView(
         factory = { ctx ->
@@ -234,6 +278,14 @@ private fun CameraPreview(
         modifier = Modifier.fillMaxSize(),
     )
 }
+
+/**
+ * The Edge 50 Ultra's large main sensor can't focus closer than ~10 cm, so a 1.5× start lets
+ * people hold the phone back far enough for small PDF417 codes to be sharp. Presets stay below
+ * 3× so CameraX doesn't hand over to the telephoto lens, which focuses even farther away.
+ */
+private const val DEFAULT_ZOOM = 1.5f
+private val ZOOM_PRESETS = listOf(1f, 1.5f, 2f)
 
 @Composable
 private fun ScanOverlay() {

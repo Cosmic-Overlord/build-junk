@@ -67,8 +67,8 @@ fun EditPassScreen(vm: AppViewModel, passId: String, onClose: () -> Unit, onSave
     val code3 = { s: String -> s.uppercase().filter { it in 'A'..'Z' }.take(3) }
 
     fun save() {
-        vm.save(
-            pass.copy(
+        vm.saveEdits(pass.id) { current ->
+            current.copy(
                 carrier = carrier.trim().uppercase(),
                 flightNumber = number.trim().uppercase().trimStart('0').ifEmpty { number.trim() },
                 from = from,
@@ -79,8 +79,8 @@ fun EditPassScreen(vm: AppViewModel, passId: String, onClose: () -> Unit, onSave
                 seat = seat.trim().uppercase(),
                 compartment = cabin.trim().uppercase().take(1),
                 sequence = sequence.trim(),
-            ),
-        )
+            )
+        }
         onSaved()
     }
 

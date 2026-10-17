@@ -8,6 +8,7 @@ import io.github.cosmicoverlord.boardingpass.core.model.DecodedCode
 import io.github.cosmicoverlord.boardingpass.core.model.PassFactory
 import io.github.cosmicoverlord.boardingpass.core.model.PkPass
 import io.github.cosmicoverlord.boardingpass.data.PassRepository
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -30,10 +31,15 @@ class PassImporter(
         importCodes(decodeUri(uri))
     } catch (e: ImportException) {
         ImportOutcome.Failed(e.message ?: "Не удалось прочитать файл")
+    } catch (e: CancellationException) {
+        throw e
     } catch (e: SecurityException) {
         ImportOutcome.Failed("Нет доступа к файлу")
     } catch (e: OutOfMemoryError) {
         ImportOutcome.Failed("Файл слишком большой")
+    } catch (e: Exception) {
+        // FileNotFoundException for expired grants, IOExceptions from PdfRenderer, etc.
+        ImportOutcome.Failed("Не удалось прочитать файл")
     }
 
     suspend fun importCodes(codes: List<DecodedCode>): ImportOutcome {

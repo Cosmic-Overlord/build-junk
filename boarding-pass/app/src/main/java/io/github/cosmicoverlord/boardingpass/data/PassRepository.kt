@@ -13,6 +13,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.json.jsonArray
 import java.io.File
 
 /** Boarding passes stored as one JSON file; there are only ever a handful of them. */
@@ -44,15 +45,43 @@ class PassRepository(context: Context) {
         list.map { if (it.id == id) change(it) else it }
     }
 
-    private fun load(): List<BoardingPass> = try {
-        if (!file.baseFile.exists()) {
-            emptyList()
-        } else {
-            AppJson.decodeFromString(serializer, file.readFully().toString(Charsets.UTF_8))
+    /**
+     * Decodes passes one by one so a single bad entry doesn't cost the rest. If anything was
+     * unreadable the original file is backed up first, since the next save rewrites it.
+     */
+    private fun load(): List<BoardingPass> {
+        if (!file.baseFile.exists()) return emptyList()
+        val text = try {
+            file.readFully().toString(Charsets.UTF_8)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to read passes", e)
+            return emptyList()
         }
-    } catch (e: Exception) {
-        Log.e(TAG, "Failed to read passes", e)
-        emptyList()
+        val items = try {
+            AppJson.parseToJsonElement(text).jsonArray
+        } catch (e: Exception) {
+            Log.e(TAG, "passes.json is not a JSON array", e)
+            backup(text)
+            return emptyList()
+        }
+        val passes = items.mapNotNull { item ->
+            try {
+                AppJson.decodeFromJsonElement(BoardingPass.serializer(), item)
+            } catch (e: Exception) {
+                Log.e(TAG, "Skipping unreadable pass", e)
+                null
+            }
+        }
+        if (passes.size != items.size) backup(text)
+        return passes
+    }
+
+    private fun backup(text: String) {
+        try {
+            File(file.baseFile.parentFile, "passes-backup-${System.currentTimeMillis()}.json").writeText(text)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to back up passes", e)
+        }
     }
 
     private fun save(list: List<BoardingPass>) {

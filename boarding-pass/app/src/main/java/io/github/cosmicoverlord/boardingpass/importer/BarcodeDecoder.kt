@@ -174,7 +174,7 @@ class BarcodeDecoder(private val context: Context) {
         private const val ZXING_MAX_SIDE = 2000
         private const val MAX_PDF_PAGES = 12
         private const val PDF_RENDER_SIDE = 2400
-        private const val PDF_RENDER_SIDE_HQ = 3600
+        private const val PDF_RENDER_SIDE_HQ = 3300
 
         fun scannerOptions(): BarcodeScannerOptions = BarcodeScannerOptions.Builder()
             .setBarcodeFormats(
