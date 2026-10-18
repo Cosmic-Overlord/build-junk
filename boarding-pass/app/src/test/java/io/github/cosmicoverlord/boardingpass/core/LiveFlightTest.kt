@@ -7,6 +7,7 @@ import io.github.cosmicoverlord.boardingpass.core.model.LiveFlight.Phase
 import io.github.cosmicoverlord.boardingpass.core.model.StatusKind
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import java.time.Duration
@@ -79,6 +80,43 @@ class LiveFlightTest {
         val night = pass(FlightStatus(provider = "X", fetchedAt = 0, depScheduled = "2026-10-17T23:10+03:00", arrScheduled = "2026-10-18T06:05+05:00"))
         val n = LiveFlight.state(night, at("2026-10-17T21:00:00Z"), lead)!!
         assertEquals("23:10 → 06:05 (+1) · местное время", LiveFlight.card(night, n).text)
+    }
+
+    @Test
+    fun delayOnTheGroundDoesNotStartTheFlight() {
+        val fetched = at("2026-10-17T07:05:00Z").toEpochMilli()
+        val p = pass(st(kind = StatusKind.BOARDING, gate = "B12", fetchedAt = fetched))
+        val waiting = LiveFlight.state(p, at("2026-10-17T07:10:00Z"), lead)!!
+        assertEquals(Phase.WAITING, waiting.phase)
+        assertNull(waiting.countdownTo)
+        assertEquals(at("2026-10-17T07:35:00Z"), waiting.endsAt)
+        val card = LiveFlight.card(p, waiting, at("2026-10-17T07:10:00Z"))
+        assertEquals("Ожидает вылета · по расписанию 10:00 · выход B12 · посадка", card.text)
+        assertEquals("+10 мин", card.chip)
+        assertTrue(LiveFlight.canMarkTakeoff(p, waiting, at("2026-10-17T07:10:00Z")))
+        assertEquals(at("2026-10-17T07:15:00Z"), LiveFlight.nextWake(listOf(p), at("2026-10-17T07:10:00Z"), lead))
+
+        // No news for 30 minutes (flight mode): assume it left at the expected time.
+        val offline = LiveFlight.state(p, at("2026-10-17T07:40:00Z"), lead)!!
+        assertEquals(Phase.IN_FLIGHT, offline.phase)
+        assertEquals(at("2026-10-17T09:00:00Z"), offline.countdownTo)
+
+        // The provider says it has left.
+        val left = pass(st(kind = StatusKind.DEPARTED, fetchedAt = fetched))
+        assertEquals(Phase.IN_FLIGHT, LiveFlight.state(left, at("2026-10-17T07:10:00Z"), lead)!!.phase)
+    }
+
+    @Test
+    fun tookOffByHand() {
+        val p = pass(st(kind = StatusKind.GATE_CLOSED, fetchedAt = at("2026-10-17T07:40:00Z").toEpochMilli()))
+            .copy(takeoffAt = at("2026-10-17T07:50:00Z").toEpochMilli())
+        val s = LiveFlight.state(p, at("2026-10-17T08:00:00Z"), lead)!!
+        assertEquals(Phase.IN_FLIGHT, s.phase)
+        // Two hours scheduled, less 15 minutes of taxiing, from the take-off.
+        assertEquals(at("2026-10-17T09:35:00Z"), s.countdownTo)
+        assertEquals("10:50 → 12:35 · местное время", LiveFlight.card(p, s).text)
+        assertEquals(false, LiveFlight.canMarkTakeoff(p, s, at("2026-10-17T08:00:00Z")))
+        assertEquals(Phase.LANDED, LiveFlight.state(p, at("2026-10-17T09:40:00Z"), lead)!!.phase)
     }
 
     @Test

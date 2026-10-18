@@ -36,6 +36,7 @@ import kotlin.math.roundToInt
 object LiveUpdates {
     const val CHANNEL = "live_flight"
     const val ACTION_HIDE = "io.github.cosmicoverlord.boardingpass.LIVE_HIDE"
+    const val ACTION_TAKEOFF = "io.github.cosmicoverlord.boardingpass.LIVE_TAKEOFF"
     const val EXTRA_FLIGHT = "flight"
     private const val REQUEST_TICK = 7302
     private const val MAX = 1000
@@ -98,11 +99,12 @@ object LiveUpdates {
     }
 
     private fun build(context: Context, p: BoardingPass, s: LiveFlight.State, settings: AppSettings, now: Instant): Notification {
-        val card = LiveFlight.card(p, s)
-        val hide = PendingIntent.getBroadcast(
-            context, id(p), Intent(context, LiveActionReceiver::class.java).setAction(ACTION_HIDE).putExtra(EXTRA_FLIGHT, p.flightKey),
+        val card = LiveFlight.card(p, s, now)
+        fun action(name: String) = PendingIntent.getBroadcast(
+            context, id(p), Intent(context, LiveActionReceiver::class.java).setAction(name).putExtra(EXTRA_FLIGHT, p.flightKey),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
+        val hide = action(ACTION_HIDE)
         val b = Notification.Builder(context, CHANNEL)
             .setSmallIcon(R.drawable.ic_stat_flight)
             .setContentTitle(card.title)
@@ -121,6 +123,10 @@ object LiveUpdates {
             b.setWhen(target.toEpochMilli()).setShowWhen(true).setUsesChronometer(true).setChronometerCountDown(true)
         } else {
             b.setShowWhen(false)
+        }
+        // Counts the flight from now when the provider can't tell (flight mode, no data).
+        if (LiveFlight.canMarkTakeoff(p, s, now)) {
+            b.addAction(Notification.Action.Builder(null as Icon?, tr("Взлетели", "Took off"), action(ACTION_TAKEOFF)).build())
         }
         if (Rush.isActive(p, now) && RushService.running && settings.trackingEnabled && settings.rushEnabled) {
             b.addAction(Notification.Action.Builder(null as Icon?, tr("Не обновлять", "Stop refreshing"), Notifications.rushStop(context)).build())
@@ -183,6 +189,12 @@ object LiveUpdates {
         AppGraph.repository.update { list -> list.map { if (it.flightKey == flightKey) it.copy(liveHidden = true) else it } }
         refresh(context)
     }
+
+    suspend fun tookOff(context: Context, flightKey: String) {
+        val now = System.currentTimeMillis()
+        AppGraph.repository.update { list -> list.map { if (it.flightKey == flightKey) it.copy(takeoffAt = now) else it } }
+        refresh(context)
+    }
 }
 
 class LiveTickReceiver : BroadcastReceiver() {
@@ -194,13 +206,14 @@ class LiveTickReceiver : BroadcastReceiver() {
 /** "Hide" on the card, or the card swiped away. */
 class LiveActionReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        if (intent.action != LiveUpdates.ACTION_HIDE) return
+        val action = intent.action
+        if (action != LiveUpdates.ACTION_HIDE && action != LiveUpdates.ACTION_TAKEOFF) return
         val key = intent.getStringExtra(LiveUpdates.EXTRA_FLIGHT) ?: return
         val app = context.applicationContext
         val pending = goAsync()
         AppGraph.scope.launch {
             try {
-                LiveUpdates.hide(app, key)
+                if (action == LiveUpdates.ACTION_TAKEOFF) LiveUpdates.tookOff(app, key) else LiveUpdates.hide(app, key)
             } finally {
                 pending.finish()
             }

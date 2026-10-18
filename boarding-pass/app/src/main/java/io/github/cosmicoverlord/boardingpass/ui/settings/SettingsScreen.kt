@@ -210,10 +210,10 @@ fun SettingsScreen(vm: AppViewModel, onBack: () -> Unit) {
                 SwitchRow(
                     title = tr("Частое обновление за час до вылета", "Frequent refresh in the last hour"),
                     subtitle = tr(
-                        "С T−60 мин до вылета статус и выход проверяются каждые ${settings.rushIntervalMinutes} мин: " +
+                        "С T−60 мин и до фактического вылета (при задержке на земле — до часа после) статус и выход проверяются каждые ${settings.rushIntervalMinutes} мин: " +
                             "гейт могут сменить в последний момент. В шторке висит уведомление с выходом. " +
                             "Это ≈${60 / settings.rushIntervalMinutes.coerceAtLeast(1)} запросов на рейс — у Aviationstack (100/мес) это заметная часть лимита.",
-                        "From T−60 min until departure the status and gate are checked every ${settings.rushIntervalMinutes} min, " +
+                        "From T−60 min until the flight actually leaves (up to an hour late) the status and gate are checked every ${settings.rushIntervalMinutes} min, " +
                             "since gates change at the last moment. An ongoing notification shows the gate. " +
                             "That's ≈${60 / settings.rushIntervalMinutes.coerceAtLeast(1)} requests per flight — a big share of Aviationstack's 100/month.",
                     ),

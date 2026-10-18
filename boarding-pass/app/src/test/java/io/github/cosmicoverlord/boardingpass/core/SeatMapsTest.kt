@@ -228,10 +228,13 @@ class SeatMapsTest {
         assertFalse(Rush.isActive(p, at("2026-10-17T05:59:00Z")))
         assertTrue(Rush.isActive(p, at("2026-10-17T06:00:00Z")))
         assertTrue(Rush.isActive(p, at("2026-10-17T06:59:00Z")))
-        assertFalse(Rush.isActive(p, at("2026-10-17T07:00:00Z")))
+        // Still on the ground after the departure time: keep refreshing, for an hour at most.
+        assertTrue(Rush.isActive(p, at("2026-10-17T07:30:00Z")))
+        assertFalse(Rush.isActive(p, at("2026-10-17T08:00:00Z")))
+        assertFalse(Rush.isActive(p.copy(takeoffAt = at("2026-10-17T07:10:00Z").toEpochMilli()), at("2026-10-17T07:30:00Z")))
         // A delay moves the window with the estimate.
         val delayed = pass("2026-10-17T10:00+03:00", est = "2026-10-17T10:45+03:00")
-        assertTrue(Rush.isActive(delayed, at("2026-10-17T07:30:00Z")))
+        assertTrue(Rush.isActive(delayed, at("2026-10-17T08:30:00Z")))
         assertFalse(Rush.isActive(pass("2026-10-17T10:00+03:00", kind = StatusKind.DEPARTED), at("2026-10-17T06:30:00Z")))
         assertFalse(Rush.isActive(pass("2026-10-17T10:00+03:00", muted = true), at("2026-10-17T06:30:00Z")))
         assertFalse(Rush.isActive(pass(null), at("2026-10-17T06:30:00Z")))

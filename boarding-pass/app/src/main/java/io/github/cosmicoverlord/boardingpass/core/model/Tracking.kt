@@ -62,22 +62,29 @@ object Tracking {
 /**
  * The hour before departure, when gates and boarding change at short notice and the status is
  * refreshed every couple of minutes. For a 10:00 departure (boarding ~9:20, gate closes ~9:40)
- * the window is 9:00–10:00, and it moves with the estimated time when the flight is delayed.
+ * the window opens at 9:00 and moves with the estimated time when the flight is delayed. It
+ * lasts until the flight has actually left, so a delay on the ground is followed too, but no
+ * later than 11:00.
  */
 object Rush {
     const val WINDOW_MINUTES = 60L
+
+    /** A delay on the ground keeps the refresh going this long past the expected departure. */
+    const val AFTER_MINUTES = 60L
 
     /** Estimated departure if known, else scheduled; null without a status (no time on the pass). */
     fun departure(p: BoardingPass): Instant? =
         (p.status?.depEstimated.toOdt() ?: p.status?.depScheduled.toOdt())?.toInstant()
 
+    /** From an hour before the expected departure until it actually leaves (see [isDone]), an hour late at most. */
     fun window(p: BoardingPass): ClosedRange<Instant>? {
         val dep = departure(p) ?: return null
-        return dep.minusSeconds(WINDOW_MINUTES * 60)..dep
+        return dep.minusSeconds(WINDOW_MINUTES * 60)..dep.plusSeconds(AFTER_MINUTES * 60)
     }
 
     fun isDone(p: BoardingPass, now: Instant = Instant.now()): Boolean =
-        p.rushMuted || p.status?.kind?.hasLeft == true || p.carrier.isBlank() || p.flightNumber.isBlank() ||
+        p.rushMuted || p.status?.kind?.hasLeft == true || p.status?.depActual.toOdt() != null || p.takeoffAt != null ||
+            p.carrier.isBlank() || p.flightNumber.isBlank() ||
             Tracking.isFinished(p, now.atZone(ZoneId.systemDefault()).toLocalDate(), now)
 
     fun isActive(p: BoardingPass, now: Instant): Boolean {

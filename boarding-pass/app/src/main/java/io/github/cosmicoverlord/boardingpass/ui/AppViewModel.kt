@@ -165,7 +165,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             repo.modify(id) { current ->
                 val edited = edit(current)
                 if (edited.flightKey != current.flightKey) {
-                    edited.copy(status = null, statusError = null, statusCheckedAt = null)
+                    edited.copy(status = null, statusError = null, statusCheckedAt = null, takeoffAt = null, liveHidden = false)
                 } else {
                     edited
                 }

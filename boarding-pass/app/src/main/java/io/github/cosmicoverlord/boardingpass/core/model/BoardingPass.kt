@@ -59,6 +59,8 @@ data class BoardingPass(
     val rushMuted: Boolean = false,
     /** The user dismissed this flight's live card. */
     val liveHidden: Boolean = false,
+    /** When the user tapped "Took off" on the live card (epoch ms), for when the provider can't tell. */
+    val takeoffAt: Long? = null,
 ) {
     val date: LocalDate? get() = flightDate?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
 
