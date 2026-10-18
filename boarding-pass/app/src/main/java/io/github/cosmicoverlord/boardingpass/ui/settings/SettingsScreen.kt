@@ -12,15 +12,19 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -47,6 +51,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
@@ -56,6 +61,7 @@ import io.github.cosmicoverlord.boardingpass.core.I18n
 import io.github.cosmicoverlord.boardingpass.core.status.ProviderType
 import io.github.cosmicoverlord.boardingpass.core.tr
 import io.github.cosmicoverlord.boardingpass.data.AppLanguage
+import io.github.cosmicoverlord.boardingpass.data.AppSettings
 import io.github.cosmicoverlord.boardingpass.data.ThemeMode
 import io.github.cosmicoverlord.boardingpass.tracking.LiveUpdates
 import io.github.cosmicoverlord.boardingpass.tracking.Notifications
@@ -63,7 +69,6 @@ import io.github.cosmicoverlord.boardingpass.ui.AppViewModel
 import io.github.cosmicoverlord.boardingpass.ui.components.SectionCard
 import io.github.cosmicoverlord.boardingpass.ui.components.findActivity
 
-private val EDGE_OPTIONS = listOf(0, 2, 3, 4, 5)
 private val RUSH_OPTIONS = listOf(1, 2, 5)
 private val LIVE_LEAD_OPTIONS = listOf(1, 2, 3, 6)
 
@@ -301,15 +306,7 @@ fun SettingsScreen(vm: AppViewModel, onBack: () -> Unit) {
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                    EDGE_OPTIONS.forEachIndexed { index, mm ->
-                        SegmentedButton(
-                            selected = settings.edgeMarginMm == mm,
-                            onClick = { vm.updateSettings { it.copy(edgeMarginMm = mm) } },
-                            shape = SegmentedButtonDefaults.itemShape(index, EDGE_OPTIONS.size),
-                        ) { Text(if (mm == 0) tr("Нет", "None") else tr("$mm мм", "$mm mm")) }
-                    }
-                }
+                MarginStepper(settings.edgeMarginMm) { mm -> vm.updateSettings { it.copy(edgeMarginMm = mm) } }
             }
 
             SectionCard(tr("Интерфейс", "Interface")) {
@@ -371,6 +368,42 @@ fun SettingsScreen(vm: AppViewModel, onBack: () -> Unit) {
             Spacer(Modifier.height(24.dp))
         }
     }
+}
+
+/** "−  4,5 мм  +" in half-millimetre steps, with a way back to the default. */
+@Composable
+private fun MarginStepper(value: Float, onChange: (Float) -> Unit) {
+    val step = AppSettings.EDGE_MARGIN_STEP_MM
+    val max = AppSettings.MAX_EDGE_MARGIN_MM
+    fun snap(mm: Float) = (Math.round(mm / step) * step).coerceIn(0f, max)
+    val current = snap(value)
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
+        FilledTonalIconButton(onClick = { onChange(snap(current - step)) }, enabled = current > 0f) {
+            Icon(Icons.Default.Remove, contentDescription = tr("Меньше", "Less"))
+        }
+        Text(
+            millimetres(current),
+            style = MaterialTheme.typography.titleLarge,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.width(140.dp),
+        )
+        FilledTonalIconButton(onClick = { onChange(snap(current + step)) }, enabled = current < max) {
+            Icon(Icons.Default.Add, contentDescription = tr("Больше", "More"))
+        }
+    }
+    val default = AppSettings.DEFAULT_EDGE_MARGIN_MM
+    if (current != default) {
+        TextButton(onClick = { onChange(default) }, modifier = Modifier.fillMaxWidth()) {
+            Text(tr("Вернуть ${millimetres(default)}", "Back to ${millimetres(default)}"))
+        }
+    }
+}
+
+private fun millimetres(mm: Float): String {
+    if (mm <= 0f) return tr("без отступа", "no margin")
+    val whole = mm.toInt()
+    val number = if (mm - whole >= 0.25f) "$whole" + tr(",5", ".5") else "$whole"
+    return tr("$number мм", "$number mm")
 }
 
 @Composable

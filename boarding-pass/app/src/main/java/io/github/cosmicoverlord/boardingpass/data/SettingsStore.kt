@@ -30,8 +30,8 @@ data class AppSettings(
     val refreshMinutes: Int = 60,
     val notifications: Boolean = true,
     val askedNotificationPermission: Boolean = false,
-    /** Keeps the full-screen code off the curved display edges, in millimetres. */
-    val edgeMarginMm: Int = DEFAULT_EDGE_MARGIN_MM,
+    /** Keeps the full-screen code off the curved display edges, in millimetres (0.5 mm steps). */
+    val edgeMarginMm: Float = DEFAULT_EDGE_MARGIN_MM,
     val language: AppLanguage = AppLanguage.SYSTEM,
     val animations: Boolean = true,
     val theme: ThemeMode = ThemeMode.SYSTEM,
@@ -48,7 +48,9 @@ data class AppSettings(
 
     companion object {
         /** Clears the side curve of the Motorola Edge 50 Ultra's 6.7" pOLED panel with a little spare. */
-        const val DEFAULT_EDGE_MARGIN_MM = 4
+        const val DEFAULT_EDGE_MARGIN_MM = 4f
+        const val MAX_EDGE_MARGIN_MM = 15f
+        const val EDGE_MARGIN_STEP_MM = 0.5f
     }
 }
 
@@ -71,7 +73,12 @@ class SettingsStore(context: Context) {
         refreshMinutes = prefs.getInt("refresh_minutes", 60),
         notifications = prefs.getBoolean("notifications", true),
         askedNotificationPermission = prefs.getBoolean("asked_notifications", false),
-        edgeMarginMm = prefs.getInt("edge_margin_mm", AppSettings.DEFAULT_EDGE_MARGIN_MM),
+        // Whole millimetres under the old key, half steps under the new one.
+        edgeMarginMm = if (prefs.contains(KEY_EDGE)) {
+            prefs.getFloat(KEY_EDGE, AppSettings.DEFAULT_EDGE_MARGIN_MM)
+        } else {
+            prefs.getInt("edge_margin_mm", AppSettings.DEFAULT_EDGE_MARGIN_MM.toInt()).toFloat()
+        },
         language = language(prefs.getString(KEY_LANGUAGE, null)),
         animations = prefs.getBoolean("animations", true),
         theme = runCatching { ThemeMode.valueOf(prefs.getString("theme", null) ?: "SYSTEM") }.getOrDefault(ThemeMode.SYSTEM),
@@ -88,7 +95,7 @@ class SettingsStore(context: Context) {
             putInt("refresh_minutes", s.refreshMinutes)
             putBoolean("notifications", s.notifications)
             putBoolean("asked_notifications", s.askedNotificationPermission)
-            putInt("edge_margin_mm", s.edgeMarginMm)
+            putFloat(KEY_EDGE, s.edgeMarginMm)
             putString(KEY_LANGUAGE, s.language.name)
             putBoolean("animations", s.animations)
             putString("theme", s.theme.name)
@@ -102,6 +109,7 @@ class SettingsStore(context: Context) {
     companion object {
         private const val PREFS = "settings"
         private const val KEY_LANGUAGE = "language"
+        private const val KEY_EDGE = "edge_margin_mm_f"
 
         private fun language(name: String?) =
             runCatching { AppLanguage.valueOf(name ?: "SYSTEM") }.getOrDefault(AppLanguage.SYSTEM)

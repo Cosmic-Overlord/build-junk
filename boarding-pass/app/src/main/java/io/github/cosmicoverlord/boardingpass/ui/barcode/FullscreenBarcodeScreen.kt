@@ -3,11 +3,9 @@ package io.github.cosmicoverlord.boardingpass.ui.barcode
 import android.content.res.Configuration
 import android.view.WindowManager
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -26,6 +24,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -48,7 +47,7 @@ import io.github.cosmicoverlord.boardingpass.core.tr
  * phone, so it closes only with the button or the back gesture.
  */
 @Composable
-fun FullscreenBarcodeScreen(pass: BoardingPass, edgeMarginMm: Int, onClose: () -> Unit) {
+fun FullscreenBarcodeScreen(pass: BoardingPass, edgeMarginMm: Float, onClose: () -> Unit) {
     val context = LocalContext.current
     DisposableEffect(Unit) {
         val window = context.findActivity()?.window
@@ -78,32 +77,35 @@ fun FullscreenBarcodeScreen(pass: BoardingPass, edgeMarginMm: Int, onClose: () -
         }
     }
 
+    // Only the code keeps off the curved edges; the caption isn't scanned and stays where it is.
     val edge = millimetresToDp(edgeMarginMm)
     val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
-    val padding = if (landscape) {
-        PaddingValues(start = 8.dp, end = 8.dp, top = edge + 4.dp, bottom = edge + 4.dp)
+    val codePadding = if (landscape) {
+        PaddingValues(start = 8.dp, end = 8.dp, top = edge + 4.dp, bottom = 4.dp)
     } else {
-        PaddingValues(start = edge + 4.dp, end = edge + 4.dp, top = 8.dp, bottom = 8.dp)
+        PaddingValues(start = edge + 4.dp, end = edge + 4.dp, top = 8.dp, bottom = 4.dp)
     }
 
     Box(Modifier.fillMaxSize().background(Color.White)) {
-        Column(
-            Modifier.fillMaxSize().safeDrawingPadding().padding(padding),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
+        Column(Modifier.fillMaxSize().safeDrawingPadding()) {
             BarcodeView(
                 content = pass.barcode,
                 format = pass.format,
-                modifier = Modifier.fillMaxWidth().weight(1f),
+                modifier = Modifier.fillMaxWidth().weight(1f).padding(codePadding),
                 allowRotate = true,
             )
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
+            // Centred, and lifted clear of the rounded bottom corners.
+            Box(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 28.dp)) {
+                Column(
+                    Modifier.align(Alignment.Center).padding(horizontal = 48.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
                     Text(
                         listOf(pass.flightLabel, "${pass.from} → ${pass.to}").filter { it.isNotBlank() }.joinToString("  ·  "),
                         color = Color.Black,
                         fontWeight = FontWeight.Bold,
                         fontSize = 18.sp,
+                        textAlign = TextAlign.Center,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
@@ -114,11 +116,14 @@ fun FullscreenBarcodeScreen(pass: BoardingPass, edgeMarginMm: Int, onClose: () -
                         ).joinToString("  ·  "),
                         color = Color.DarkGray,
                         fontSize = 14.sp,
+                        textAlign = TextAlign.Center,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
-                IconButton(onClick = onClose) { Icon(Icons.Default.Close, contentDescription = tr("Закрыть", "Close"), tint = Color.Black) }
+                IconButton(onClick = onClose, modifier = Modifier.align(Alignment.CenterEnd)) {
+                    Icon(Icons.Default.Close, contentDescription = tr("Закрыть", "Close"), tint = Color.Black)
+                }
             }
         }
     }
@@ -126,8 +131,8 @@ fun FullscreenBarcodeScreen(pass: BoardingPass, edgeMarginMm: Int, onClose: () -
 
 /** Physical millimetres to dp using the panel's real pixel density (~444 ppi on the Edge 50 Ultra). */
 @Composable
-private fun millimetresToDp(mm: Int): Dp {
-    if (mm <= 0) return 0.dp
+private fun millimetresToDp(mm: Float): Dp {
+    if (mm <= 0f) return 0.dp
     val metrics = LocalContext.current.resources.displayMetrics
     val physical = (metrics.xdpi + metrics.ydpi) / 2f
     // Some devices report nonsense here; fall back to the logical density bucket.
