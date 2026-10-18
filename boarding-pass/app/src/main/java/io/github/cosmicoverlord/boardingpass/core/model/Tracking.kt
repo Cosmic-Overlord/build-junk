@@ -7,7 +7,10 @@ import java.time.ZoneId
 
 object Tracking {
     /** A provider that never says "landed" still lets go this long after the arrival time. */
-    val ARRIVAL_GRACE: Duration = Duration.ofHours(3)
+    val ARRIVAL_GRACE: Duration = Duration.ofHours(2)
+
+    /** After the expected arrival, how long to wait for a landing report before showing the flight as landed anyway. */
+    val ASSUME_LANDED_AFTER: Duration = Duration.ofMinutes(15)
 
     /** With a departure but no arrival time, give up after the longest scheduled flights. */
     val MAX_FLIGHT: Duration = Duration.ofHours(20)
@@ -19,8 +22,9 @@ object Tracking {
      */
     fun isFinished(p: BoardingPass, today: LocalDate, now: Instant = Instant.now()): Boolean {
         if (p.status?.kind?.isFinal == true) return true
-        p.arrivalTime()?.let { if (now.isAfter(it.toInstant().plus(ARRIVAL_GRACE))) return true }
-        if (p.arrivalTime() == null) {
+        val arrival = LiveFlight.arrival(p)
+        arrival?.let { if (now.isAfter(it.toInstant().plus(ARRIVAL_GRACE))) return true }
+        if (arrival == null) {
             p.departureTime()?.let { if (now.isAfter(it.toInstant().plus(MAX_FLIGHT))) return true }
         }
         val d = p.date ?: return false
@@ -54,6 +58,24 @@ object Tracking {
         if (!isRefreshable(p, today, at) || d.isAfter(today.plusDays(LOOKAHEAD_DAYS))) return false
         return now - (p.statusCheckedAt ?: 0L) >= SLOW_REFRESH_MS
     }
+
+    /**
+     * The provider never reported the landing, but the flight was due in a while ago (destinations
+     * without live data stay at "departed"). A status fetched after that time that still says the
+     * plane hasn't left wins: it is a long delay, not a missing report.
+     */
+    fun landingAssumed(p: BoardingPass, now: Instant = Instant.now()): Boolean {
+        val st = p.status ?: return false
+        if (st.kind.isFinal) return false
+        val due = LiveFlight.arrival(p)?.toInstant() ?: return false
+        if (!now.isAfter(due.plus(ASSUME_LANDED_AFTER))) return false
+        val left = st.kind.hasLeft || st.depActual.toOdt() != null || p.takeoffAt != null
+        return left || st.fetchedAt <= due.toEpochMilli()
+    }
+
+    /** The status to show: [StatusKind.LANDED] when the landing is assumed. */
+    fun shownKind(p: BoardingPass, now: Instant = Instant.now()): StatusKind? =
+        if (landingAssumed(p, now)) StatusKind.LANDED else p.status?.kind
 
     /** Upcoming = not finished (see [isFinished]); undated passes stay upcoming. */
     fun isUpcoming(p: BoardingPass, today: LocalDate, now: Instant = Instant.now()): Boolean = !isFinished(p, today, now)

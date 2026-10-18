@@ -61,8 +61,11 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.cosmicoverlord.boardingpass.core.model.BoardingPass
 import io.github.cosmicoverlord.boardingpass.core.model.CodeFormat
 import io.github.cosmicoverlord.boardingpass.core.model.FlightStatus
+import io.github.cosmicoverlord.boardingpass.core.model.LiveFlight
 import io.github.cosmicoverlord.boardingpass.core.model.PassFactory
 import io.github.cosmicoverlord.boardingpass.core.model.PassText
+import io.github.cosmicoverlord.boardingpass.core.model.StatusKind
+import io.github.cosmicoverlord.boardingpass.core.model.Tracking
 import io.github.cosmicoverlord.boardingpass.core.model.toOdt
 import io.github.cosmicoverlord.boardingpass.ui.AppViewModel
 import io.github.cosmicoverlord.boardingpass.ui.barcode.BarcodeView
@@ -261,12 +264,17 @@ private fun StatusCard(
             return@SectionCard
         }
         if (status != null) {
+            val assumed = Tracking.landingAssumed(pass)
             Row(verticalAlignment = Alignment.CenterVertically) {
-                StatusChip(status.kind)
+                StatusChip(if (assumed) StatusKind.LANDED else status.kind)
                 Spacer(Modifier.size(8.dp))
-                status.statusText?.takeIf { !it.equals(status.kind.name, ignoreCase = true) }?.let {
-                    Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                val note = if (assumed) {
+                    val due = LiveFlight.arrival(pass)?.let { Fmt.time(it) }
+                    tr("посадку источник не подтвердил", "landing not reported") + (due?.let { tr(", по расписанию в $it", ", due at $it") } ?: "")
+                } else {
+                    status.statusText?.takeIf { !it.equals(status.kind.name, ignoreCase = true) }
                 }
+                note?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             }
             FactRow(tr("Терминал", "Terminal") to status.depTerminal, tr("Выход", "Gate") to status.depGate, tr("Регистрация", "Check-in") to status.depCheckIn, emphasize = true)
 

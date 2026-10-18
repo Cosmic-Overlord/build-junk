@@ -6,6 +6,8 @@ import android.content.res.Configuration
 import io.github.cosmicoverlord.boardingpass.core.I18n
 import io.github.cosmicoverlord.boardingpass.core.data.AirlineDb
 import io.github.cosmicoverlord.boardingpass.core.data.AirportDb
+import io.github.cosmicoverlord.boardingpass.core.data.Geo
+import io.github.cosmicoverlord.boardingpass.core.model.Routes
 import io.github.cosmicoverlord.boardingpass.data.AppLanguage
 import io.github.cosmicoverlord.boardingpass.data.PassRepository
 import io.github.cosmicoverlord.boardingpass.data.SeatMapRepository
@@ -30,6 +32,13 @@ class BoardingApp : Application() {
     override fun onCreate() {
         super.onCreate()
         AppGraph.init(this)
+        // Flight times for flights the provider gives no arrival time for.
+        Routes.distanceKm = { from, to ->
+            val a = AppGraph.airports[from]
+            val b = AppGraph.airports[to]
+            if (a != null && b != null) Geo.distanceKm(a, b) else null
+        }
+        Routes.zone = { AppGraph.airports[it]?.zone }
         val settings = AppGraph.settings
         I18n.lang = settings.state.value.language.resolve()
         Notifications.createChannels(this)

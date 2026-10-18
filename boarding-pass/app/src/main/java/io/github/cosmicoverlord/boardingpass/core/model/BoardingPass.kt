@@ -75,6 +75,14 @@ data class BoardingPass(
 
     fun arrivalTime(): OffsetDateTime? =
         status?.let { it.arrActual.toOdt() ?: it.arrEstimated.toOdt() ?: it.arrScheduled.toOdt() }
+
+    /** The provider's arrival, else the departure plus a flight time estimated from the route length. */
+    fun expectedArrival(): OffsetDateTime? {
+        arrivalTime()?.let { return it }
+        val dep = departureTime() ?: return null
+        val at = dep.toInstant().plus(Routes.flightTime(from, to) ?: return null)
+        return Routes.zone(to)?.let { at.atZone(it).toOffsetDateTime() } ?: at.atOffset(dep.offset)
+    }
 }
 
 @Serializable

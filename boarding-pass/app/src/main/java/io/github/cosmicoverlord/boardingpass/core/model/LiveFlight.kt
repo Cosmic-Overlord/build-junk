@@ -90,17 +90,21 @@ object LiveFlight {
         return State(Phase.IN_FLIGHT, dep, arr, progress, arrAt, arrAt)
     }
 
+    /** When the flight is due in: see [BoardingPass.expectedArrival], adjusted for a take-off marked by hand. */
+    fun arrival(p: BoardingPass): OffsetDateTime? = arrival(p, p.takeoffAt?.let(Instant::ofEpochMilli))
+
     /**
-     * The provider's arrival, or after a take-off marked by hand that the provider hasn't caught
-     * up with, the take-off plus the scheduled flight time less taxiing.
+     * The provider's arrival (or one estimated from the route), or after a take-off marked by hand
+     * that the provider hasn't caught up with, the take-off plus the scheduled flight time less taxiing.
      */
     private fun arrival(p: BoardingPass, takeoff: Instant?): OffsetDateTime? {
         val st = p.status
-        val provider = p.arrivalTime()
+        val provider = p.expectedArrival()
         if (takeoff == null || st == null || st.arrActual.toOdt() != null) return provider
         if (st.fetchedAt > takeoff.toEpochMilli() && st.arrEstimated.toOdt() != null) return provider
-        val planned = between(st.depScheduled, st.arrScheduled) ?: between(st.depEstimated, st.arrEstimated) ?: return provider
-        val offset = (provider ?: st.arrScheduled.toOdt())?.offset ?: return provider
+        val planned = between(st.depScheduled, st.arrScheduled) ?: between(st.depEstimated, st.arrEstimated)
+            ?: Routes.flightTime(p.from, p.to)?.plus(TAXI_OUT) ?: return provider
+        val offset = provider?.offset ?: return provider
         return takeoff.plus(maxOf(planned.minus(TAXI_OUT), Duration.ofMinutes(20))).atOffset(offset)
     }
 
@@ -180,9 +184,16 @@ object LiveFlight {
                 }
             }
             Phase.LANDED -> {
-                val at = st?.arrActual.toOdt() ?: s.arrival
+                val actual = st?.arrActual.toOdt()
+                val confirmed = actual != null || st?.kind?.isFinal == true
+                val at = actual ?: s.arrival
                 val text = listOfNotNull(
-                    at?.let { tr("Прилетел в", "Landed at") + " " + it.format(hm) } ?: tr("Прилетел", "Landed"),
+                    when {
+                        at == null -> tr("Прилетел", "Landed")
+                        confirmed -> tr("Прилетел в", "Landed at") + " " + at.format(hm)
+                        // The provider never reported the landing; this is the time it was due.
+                        else -> tr("Прилёт в", "Due in at") + " " + at.format(hm)
+                    },
                     st?.arrTerminal?.let { tr("терминал", "terminal") + " $it" },
                     st?.baggageBelt?.let { tr("лента", "belt") + " $it" },
                 ).joinToString(" · ")

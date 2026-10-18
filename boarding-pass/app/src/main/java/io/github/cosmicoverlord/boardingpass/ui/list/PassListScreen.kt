@@ -257,7 +257,7 @@ private fun PassCard(
                         )
                     }
                 }
-                if (st != null) StatusChip(st.kind)
+                if (st != null) StatusChip(Tracking.shownKind(pass) ?: st.kind)
                 FilledTonalIconButton(onClick = onShowCode, modifier = Modifier.padding(start = 8.dp)) {
                     Icon(Icons.Default.QrCode, contentDescription = tr("Показать код", "Show code"))
                 }

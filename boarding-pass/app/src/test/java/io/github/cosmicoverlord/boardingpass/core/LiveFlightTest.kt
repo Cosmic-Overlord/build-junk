@@ -58,7 +58,8 @@ class LiveFlightTest {
         val landed = LiveFlight.state(p, at("2026-10-17T09:10:00Z"), lead)!!
         assertEquals(Phase.LANDED, landed.phase)
         assertNull(landed.countdownTo)
-        assertEquals("Прилетел в 12:00", LiveFlight.card(p, landed).text)
+        // No landing report: shown as the time it was due, not as a confirmed landing.
+        assertEquals("Прилёт в 12:00", LiveFlight.card(p, landed).text)
         assertNull(LiveFlight.state(p, at("2026-10-17T09:30:00Z"), lead))
     }
 
